@@ -1,3 +1,9 @@
+[build.environment]
+  # The Firebase web API key in firebase-applet-config.json is a public client
+  # identifier (shipped to the browser by design), not a secret. Access is
+  # enforced by Firestore security rules and API key restrictions in Google Cloud.
+  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyDSgEEm4hPBM9KdIUM1SV0hZr8jg2F8u3A"
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
