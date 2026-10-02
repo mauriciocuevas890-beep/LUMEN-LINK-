@@ -1,0 +1,12 @@
+{
+  "projectId": "lumen-link-nfc-cards",
+  "appId": "1:412619035711:web:44c7b1b829e440de08d48a",
+  "apiKey": "AIzaSyDSgEEm4hPBM9KdIUM1SV0hZr8jg2F8u3A",
+  "authDomain": "lumen-link-nfc-cards.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "lumen-link-nfc-cards.firebasestorage.app",
+  "messagingSenderId": "412619035711",
+  "measurementId": "G-055KY8GB52",
+  "oAuthClientId": "",
+  "recaptchaSiteKey": ""
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Unit.Link - Link-in-Bio",
+  "description": "A customizable link-in-bio landing page clone of Unit.Link with link grouping, theme customization, and vCard digital business card download.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

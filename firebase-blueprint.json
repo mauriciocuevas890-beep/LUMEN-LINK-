@@ -1,0 +1,259 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with theme preferences, vCard details, and claimed username",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID"
+        },
+        "username": {
+          "type": "string",
+          "description": "Unique username used for public URL /:username",
+          "maxLength": 30,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "description": "Account email address"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name of the user",
+          "maxLength": 100
+        },
+        "bio": {
+          "type": "string",
+          "description": "Short bio or tagline",
+          "maxLength": 500
+        },
+        "avatarUrl": {
+          "type": "string",
+          "description": "URL or avatar identifier",
+          "maxLength": 1000
+        },
+        "role": {
+          "type": "string",
+          "description": "User role: admin or client"
+        },
+        "assignedProfileId": {
+          "type": "string",
+          "description": "Client profile ID linked to this client user"
+        },
+        "isPremium": {
+          "type": "boolean",
+          "description": "Whether the profile has premium features unlocked like custom domains"
+        },
+        "customDomain": {
+          "type": "string",
+          "description": "Custom white-label domain or subdomain"
+        },
+        "customDomainConfig": {
+          "type": "object",
+          "description": "CNAME and DNS verification configuration"
+        },
+        "theme_preferences": {
+          "type": "object",
+          "description": "Theme customization for public page"
+        },
+        "vcard_details": {
+          "type": "object",
+          "description": "Contact info for vCard .vcf download"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp or server timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp or server timestamp"
+        }
+      },
+      "required": ["uid", "username", "email"]
+    },
+    "ClientProfile": {
+      "title": "ClientProfile",
+      "description": "Client profile managed by account owner",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Profile document ID"
+        },
+        "ownerUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of managing owner"
+        },
+        "username": {
+          "type": "string",
+          "description": "Unique username for client public URL /:username",
+          "maxLength": 30,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "clientName": {
+          "type": "string",
+          "description": "Internal business or client name",
+          "maxLength": 100
+        },
+        "clientEmail": {
+          "type": "string",
+          "description": "Email of client allowed to access this profile"
+        },
+        "clientUid": {
+          "type": "string",
+          "description": "Linked Firebase Auth UID of registered client"
+        },
+        "clientStatus": {
+          "type": "string",
+          "description": "Registration status: unassigned, pending, active"
+        },
+        "industry": {
+          "type": "string",
+          "description": "Industry or tag for client categorization",
+          "maxLength": 50
+        },
+        "isPremium": {
+          "type": "boolean",
+          "description": "Whether client has premium features unlocked"
+        },
+        "customDomain": {
+          "type": "string",
+          "description": "Custom white-label domain or subdomain"
+        },
+        "customDomainConfig": {
+          "type": "object",
+          "description": "CNAME and DNS verification configuration"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Public display name",
+          "maxLength": 100
+        },
+        "bio": {
+          "type": "string",
+          "description": "Short bio or tagline",
+          "maxLength": 500
+        },
+        "avatarUrl": {
+          "type": "string",
+          "description": "Avatar or logo URL",
+          "maxLength": 1000
+        },
+        "theme_preferences": {
+          "type": "object",
+          "description": "Theme customization for public page"
+        },
+        "vcard_details": {
+          "type": "object",
+          "description": "Contact info for vCard .vcf download"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "ISO timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp"
+        }
+      },
+      "required": ["ownerUid", "username", "clientName"]
+    },
+    "Username": {
+      "title": "Username",
+      "description": "Unique reservation record mapping username to user UID or profile ID",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "UID of owner"
+        },
+        "profileId": {
+          "type": "string",
+          "description": "Optional profile ID for client profiles"
+        },
+        "username": {
+          "type": "string",
+          "description": "Lowercase claimed username",
+          "maxLength": 30,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["uid", "username"]
+    },
+    "Link": {
+      "title": "Link",
+      "description": "Individual link item belonging to a user or client profile",
+      "type": "object",
+      "properties": {
+        "link_id": {
+          "type": "string",
+          "description": "Document ID"
+        },
+        "uid": {
+          "type": "string",
+          "description": "Owner UID"
+        },
+        "profileId": {
+          "type": "string",
+          "description": "Associated client profile ID"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of link",
+          "maxLength": 100
+        },
+        "url": {
+          "type": "string",
+          "description": "Destination URL",
+          "maxLength": 2048
+        },
+        "group_name": {
+          "type": "string",
+          "description": "Optional category or group name",
+          "maxLength": 50
+        },
+        "order": {
+          "type": "number",
+          "description": "Sorting position index"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether link is displayed"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last updated timestamp"
+        }
+      },
+      "required": ["uid", "title", "url", "order"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles indexed by UID"
+    },
+    "/profiles/{profileId}": {
+      "schema": { "$ref": "#/entities/ClientProfile" },
+      "description": "Client profiles managed by account owners"
+    },
+    "/usernames/{username}": {
+      "schema": { "$ref": "#/entities/Username" },
+      "description": "Unique username registry documents"
+    },
+    "/links/{link_id}": {
+      "schema": { "$ref": "#/entities/Link" },
+      "description": "Public and managed links"
+    }
+  }
+}
