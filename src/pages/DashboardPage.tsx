@@ -47,6 +47,7 @@ import {
   HeartPulse,
   Globe,
   Server,
+  Sliders,
 } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -57,7 +58,11 @@ import { ProfileView } from '../components/ProfileView';
 import { QRCodeCard } from '../components/QRCodeCard';
 import { QRCodeGeneratorModal } from '../components/QRCodeModal';
 import { ImageDropzone } from '../components/ImageDropzone';
+import { BackgroundPresetsGallery } from '../components/BackgroundPresetsGallery';
+import { ProfileModulesEditor } from '../components/ProfileModulesEditor';
+import { CapturedLeadsViewer } from '../components/CapturedLeadsViewer';
 import { CustomDomainSettings } from '../components/CustomDomainSettings';
+import { VideoEmbedSettings } from '../components/VideoEmbedSettings';
 import { THEME_PRESETS } from '../utils/themePresets';
 import { PREMADE_PROFILE_TEMPLATES } from '../utils/premadeTemplates';
 import { CURATED_BACKGROUND_PRESETS, CURATED_CARD_TEMPLATES } from '../utils/imageUpload';
@@ -65,13 +70,13 @@ import { downloadVCard, generateAndDownloadVCF, parseVCardString } from '../util
 import { cleanFirestoreData } from '../utils/cleanFirestoreData';
 import { LinkPresetsSelector } from '../components/LinkPresetsSelector';
 import { LinkPreset } from '../utils/linkPresets';
-import { ThemePreferences, VCardDetails, LinkItem, UserProfile, ClientProfile } from '../types';
+import { ThemePreferences, VCardDetails, LinkItem, UserProfile, ClientProfile, ProfileModulesConfig, VideoEmbedModule } from '../types';
 import { getPublicProfileUrl, getClientPortalUrl, formatExternalUrl } from '../utils/urlHelper';
 import { copyToClipboard } from '../utils/clipboard';
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { currentUser, profile, signOut, updateTheme, updateVCard, updateBasicProfile, updateFullProfile, loading, isAdmin } = useAuth();
+  const { currentUser, profile, signOut, updateTheme, updateVCard, updateBasicProfile, updateFullProfile, updateModules, refreshProfile, loading, isAdmin } = useAuth();
   const { clients, loading: clientsLoading, addClient, updateClient, assignClientEmail, unlinkClientEmail, deleteClient, checkUsernameAvailable } = useClients(currentUser?.uid);
 
   // Active profile selection: 'main' (own profile) or clientId
@@ -155,6 +160,11 @@ export function DashboardPage() {
   // Search filter for clients tab
   const [clientSearchQuery, setClientSearchQuery] = useState('');
 
+  // Delete & Unlink in-app confirmation modal states (replaces window.confirm)
+  const [clientToDelete, setClientToDelete] = useState<ClientProfile | null>(null);
+  const [clientToUnlinkEmail, setClientToUnlinkEmail] = useState<ClientProfile | null>(null);
+  const [isDeletingClient, setIsDeletingClient] = useState(false);
+
   // Editable Theme state
   const [localTheme, setLocalTheme] = useState<ThemePreferences>(
     activeClient?.theme_preferences || profile?.theme_preferences || THEME_PRESETS[0].theme
@@ -180,6 +190,16 @@ export function DashboardPage() {
     }
   );
 
+  // Editable VideoEmbed module state (YouTube, Twitch, Vimeo al final de la tarjeta)
+  const [localVideoEmbed, setLocalVideoEmbed] = useState<VideoEmbedModule>(
+    activeClient?.modules?.videoEmbed || profile?.modules?.videoEmbed || {
+      enabled: false,
+      videoUrl: '',
+      title: 'Transmisión en Vivo',
+      isLive: false,
+    }
+  );
+
   // Keep local fields in sync when active profile changes (switching between 'main' and a client)
   useEffect(() => {
     const isProfileSwitch = activeClientId !== lastLoadedProfileIdRef.current;
@@ -198,6 +218,14 @@ export function DashboardPage() {
           setBio(profile.bio || '');
           setAvatarUrl(profile.avatarUrl || '');
           if (profile.vcard_details) setVcardForm(profile.vcard_details);
+          setLocalVideoEmbed(
+            profile.modules?.videoEmbed || {
+              enabled: false,
+              videoUrl: '',
+              title: 'Transmisión en Vivo',
+              isLive: false,
+            }
+          );
         }
       } else if (activeClient) {
         if (activeClient.theme_preferences) setLocalTheme(activeClient.theme_preferences);
@@ -205,6 +233,14 @@ export function DashboardPage() {
         setBio(activeClient.bio || '');
         setAvatarUrl(activeClient.avatarUrl || '');
         if (activeClient.vcard_details) setVcardForm(activeClient.vcard_details);
+        setLocalVideoEmbed(
+          activeClient.modules?.videoEmbed || {
+            enabled: false,
+            videoUrl: '',
+            title: 'Transmisión en Vivo',
+            isLive: false,
+          }
+        );
       }
     }
   }, [activeClientId, activeClient, profile]);
@@ -360,23 +396,33 @@ export function DashboardPage() {
     setSaveErrorMsg(null);
     try {
       if (activeClientId === 'main') {
+        const updatedModules: ProfileModulesConfig = {
+          ...(profile?.modules || {}),
+          videoEmbed: localVideoEmbed,
+        };
         await updateFullProfile({
           theme_preferences: localTheme,
           displayName: displayName.trim(),
           bio: bio.trim(),
           avatarUrl: avatarUrl.trim(),
           vcard_details: vcardForm,
+          modules: updatedModules,
         });
       } else if (activeClient) {
+        const updatedModules: ProfileModulesConfig = {
+          ...(activeClient.modules || {}),
+          videoEmbed: localVideoEmbed,
+        };
         await updateClient(activeClient.id, {
           theme_preferences: localTheme,
           displayName: displayName.trim(),
           bio: bio.trim(),
           avatarUrl: avatarUrl.trim(),
           vcard_details: vcardForm,
+          modules: updatedModules,
         });
       }
-      setSaveSuccessMsg('¡Diseño, perfil y número de teléfono guardados con éxito!');
+      setSaveSuccessMsg('¡Foto, plantilla, fondo y video guardados con éxito!');
       setTimeout(() => setSaveSuccessMsg(null), 3500);
     } catch (err) {
       console.error('Failed to save appearance:', err);
@@ -485,11 +531,17 @@ export function DashboardPage() {
     }
   };
 
-  // Handle Unlink Client Email
-  const handleUnlinkEmail = async (client: ClientProfile) => {
-    if (!window.confirm(`¿Desvincular el acceso del correo ${client.clientEmail} de esta tarjeta?`)) return;
+  // Handle Unlink Client Email (opens in-app modal)
+  const handleUnlinkEmail = (client: ClientProfile) => {
+    setClientToUnlinkEmail(client);
+  };
+
+  const handleConfirmUnlinkEmail = async () => {
+    if (!clientToUnlinkEmail) return;
     try {
+      const client = clientToUnlinkEmail;
       await unlinkClientEmail(client.id);
+      setClientToUnlinkEmail(null);
       setSaveSuccessMsg(`Correo desvinculado de ${client.clientName}`);
       setTimeout(() => setSaveSuccessMsg(null), 3000);
     } catch (err) {
@@ -515,22 +567,29 @@ export function DashboardPage() {
     }
   };
 
-  // Handle Delete Client
-  const handleDeleteClient = async (client: ClientProfile) => {
-    const confirmDelete = window.confirm(
-      `¿Estás seguro de que deseas eliminar el cliente "${client.clientName}" (@${client.username})? Se liberará el enlace y se eliminarán sus enlaces.`
-    );
-    if (!confirmDelete) return;
+  // Handle Delete Client (opens in-app modal)
+  const handleDeleteClient = (client: ClientProfile) => {
+    setClientToDelete(client);
+  };
 
+  const handleConfirmDeleteClient = async () => {
+    if (!clientToDelete) return;
+    setIsDeletingClient(true);
     try {
+      const client = clientToDelete;
       await deleteClient(client);
       if (activeClientId === client.id) {
         setActiveClientId('main');
       }
-      setSaveSuccessMsg(`Cliente @${client.username} eliminado.`);
+      setClientToDelete(null);
+      setSaveSuccessMsg(`Cliente "${client.clientName}" (@${client.username}) eliminado con éxito.`);
       setTimeout(() => setSaveSuccessMsg(null), 3000);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting client:', err);
+      setSaveErrorMsg(err?.message || 'Error al eliminar cliente.');
+      setTimeout(() => setSaveErrorMsg(null), 4000);
+    } finally {
+      setIsDeletingClient(false);
     }
   };
 
@@ -544,6 +603,10 @@ export function DashboardPage() {
     avatarUrl: avatarUrl,
     theme_preferences: localTheme,
     vcard_details: vcardForm,
+    modules: {
+      ...(activeClientId === 'main' ? profile?.modules : activeClient?.modules),
+      videoEmbed: localVideoEmbed,
+    },
   };
 
   // Filtered links for dashboard list
@@ -569,11 +632,16 @@ export function DashboardPage() {
       <header className="border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Link to="/" className="flex items-center gap-2 font-bold text-lg tracking-tight text-white">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <span className="hidden sm:inline">Lumen<span className="text-sky-400">.Link</span></span>
+            <Link to="/" className="flex items-center gap-2.5 font-bold text-lg tracking-tight text-white group">
+              <img
+                src="/logo.png"
+                alt="LumenBase Logo"
+                className="w-8 h-8 rounded-xl object-contain bg-slate-900 border border-slate-800 p-0.5 shadow-md shadow-sky-500/10 group-hover:scale-105 transition-transform"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = 'https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png';
+                }}
+              />
+              <span className="hidden sm:inline">LumenBase<span className="text-sky-400"> NFC</span></span>
             </Link>
 
             {/* Client / Profile Switcher Dropdown */}
@@ -866,7 +934,7 @@ export function DashboardPage() {
               </span>
             </button>
 
-            {/* Media Tab: Foto, Tarjeta y Fondo */}
+            {/* Media Tab: Foto, Tarjeta, Fondo y Video */}
             <button
               id="tab-media-btn"
               onClick={() => setActiveTab('media')}
@@ -877,7 +945,7 @@ export function DashboardPage() {
               }`}
             >
               <Sparkles className="w-4 h-4" />
-              <span>Foto, Tarjeta y Fondo</span>
+              <span>Foto, Fondo y Video</span>
             </button>
 
             <button
@@ -960,18 +1028,43 @@ export function DashboardPage() {
               </div>
 
               {/* 1. Foto de Perfil Dropzone */}
-              <ImageDropzone
-                type="avatar"
-                currentValue={avatarUrl}
-                onChange={(url) => setAvatarUrl(url)}
-                onRemove={() => setAvatarUrl('')}
-                label="1. Foto de Perfil / Logotipo"
-                description={
-                  activeClientId !== 'main'
-                    ? `Sube la foto personal o logo corporativo de ${activeClient?.clientName}`
-                    : 'Sube tu foto de perfil personal o logo corporativo desde tu dispositivo'
-                }
-              />
+              <div className="space-y-2">
+                <ImageDropzone
+                  type="avatar"
+                  currentValue={avatarUrl}
+                  onChange={(url) => setAvatarUrl(url)}
+                  onRemove={() => setAvatarUrl('')}
+                  label="1. Foto de Perfil / Logotipo"
+                  description={
+                    activeClientId !== 'main'
+                      ? `Sube la foto personal o logo corporativo de ${activeClient?.clientName}`
+                      : 'Sube tu foto de perfil personal o logo corporativo desde tu dispositivo'
+                  }
+                />
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setAvatarUrl('https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png')}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-xs font-semibold text-sky-400 hover:text-sky-300 transition-all shadow-xs"
+                    title="Usar mi logo oficial como avatar"
+                  >
+                    <img
+                      src="/logo.png"
+                      alt="Logo"
+                      className="w-4 h-4 rounded-sm object-contain"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png';
+                      }}
+                    />
+                    <span>Usar mi logotipo LumenBase</span>
+                  </button>
+                  {avatarUrl === 'https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png' && (
+                    <span className="text-[11px] font-medium text-emerald-400 flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> Logo oficial seleccionado
+                    </span>
+                  )}
+                </div>
+              </div>
 
               {/* 2. Plantilla de la Tarjeta Digital Dropzone */}
               <ImageDropzone
@@ -1061,41 +1154,47 @@ export function DashboardPage() {
                 onOverlayChange={(ov) => setLocalTheme((prev) => ({ ...prev, bgImageOverlay: ov }))}
               />
 
-              {/* Fondos prediseñados rápidos */}
-              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 sm:p-5">
-                <h4 className="text-xs font-bold text-white mb-2 flex items-center gap-1.5">
-                  <Palette className="w-3.5 h-3.5 text-indigo-400" />
-                  Galería de Fondos de Pantalla Prediseñados
-                </h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {CURATED_BACKGROUND_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => {
-                        setLocalTheme((prev) => ({
-                          ...prev,
-                          bgType: 'gradient',
-                          bgGradient: preset.gradient,
-                          bgImageUrl: undefined,
-                          cardTextColor: preset.textColor,
-                          cardBgColor: preset.cardBg,
-                          accentColor: preset.accent,
-                        }));
-                      }}
-                      className="p-3 rounded-xl border border-slate-800 hover:border-sky-500/60 text-left transition-all group"
-                      style={{ background: preset.gradient }}
-                    >
-                      <span className="block text-xs font-bold text-white drop-shadow-md">
-                        {preset.name}
-                      </span>
-                      <span className="block text-[10px] text-white/70 drop-shadow-xs">
-                        {preset.category}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* Fondos prediseñados rápidos con categorías y buscador */}
+              <BackgroundPresetsGallery
+                currentGradient={localTheme.bgGradient}
+                currentBgType={localTheme.bgType}
+                onSelect={(preset) => {
+                  setLocalTheme((prev) => ({
+                    ...prev,
+                    bgType: 'gradient',
+                    bgGradient: preset.gradient,
+                    bgImageUrl: undefined,
+                    cardTextColor: preset.textColor,
+                    cardBgColor: preset.cardBg,
+                    accentColor: preset.accent,
+                    presetId: 'custom',
+                  }));
+                }}
+                onResetToSolid={() => {
+                  setLocalTheme((prev) => ({
+                    ...prev,
+                    bgType: 'solid',
+                    bgGradient: undefined,
+                    bgImageUrl: undefined,
+                    bgColor: '#0f172a',
+                    cardTextColor: '#ffffff',
+                    cardBgColor: '#1e293b',
+                    accentColor: '#38bdf8',
+                    presetId: 'custom',
+                  }));
+                }}
+              />
+
+              {/* 4. Video o Transmisión en Vivo al final de la tarjeta */}
+              <VideoEmbedSettings
+                config={localVideoEmbed}
+                onChange={(updated) => setLocalVideoEmbed(updated)}
+                titleText={
+                  activeClientId !== 'main'
+                    ? `4. Video o Transmisión en Vivo de ${activeClient?.clientName}`
+                    : '4. Video o Transmisión en Vivo al final de la tarjeta'
+                }
+              />
 
               {/* Guardar Cambios Button */}
               <div className="flex items-center justify-between pt-2">
@@ -1362,9 +1461,20 @@ export function DashboardPage() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label htmlFor="dash-avatar-url" className="block text-xs font-semibold text-slate-300 mb-1.5">
-                      URL del Logo / Foto de Perfil
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label htmlFor="dash-avatar-url" className="block text-xs font-semibold text-slate-300">
+                        URL del Logo / Foto de Perfil
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setAvatarUrl('https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png')}
+                        className="text-[11px] text-sky-400 hover:text-sky-300 font-semibold flex items-center gap-1"
+                        title="Pegar URL de mi logotipo LumenBase"
+                      >
+                        <Sparkles className="w-3 h-3 text-sky-400" />
+                        <span>Usar mi Logo</span>
+                      </button>
+                    </div>
                     <input
                       id="dash-avatar-url"
                       type="url"
@@ -1448,6 +1558,37 @@ export function DashboardPage() {
                   })}
                 </div>
               </div>
+
+              {/* Galería Completa de Fondos Prediseñados */}
+              <BackgroundPresetsGallery
+                currentGradient={localTheme.bgGradient}
+                currentBgType={localTheme.bgType}
+                onSelect={(preset) => {
+                  setLocalTheme((prev) => ({
+                    ...prev,
+                    bgType: 'gradient',
+                    bgGradient: preset.gradient,
+                    bgImageUrl: undefined,
+                    cardTextColor: preset.textColor,
+                    cardBgColor: preset.cardBg,
+                    accentColor: preset.accent,
+                    presetId: 'custom',
+                  }));
+                }}
+                onResetToSolid={() => {
+                  setLocalTheme((prev) => ({
+                    ...prev,
+                    bgType: 'solid',
+                    bgGradient: undefined,
+                    bgImageUrl: undefined,
+                    bgColor: '#0f172a',
+                    cardTextColor: '#ffffff',
+                    cardBgColor: '#1e293b',
+                    accentColor: '#38bdf8',
+                    presetId: 'custom',
+                  }));
+                }}
+              />
 
               {/* Granular Theme Customizer */}
               <div className="p-6 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-5">
@@ -1937,13 +2078,14 @@ export function DashboardPage() {
                     {/* Master Card for Administrator's Own Profile */}
                     <div
                       id="main-admin-profile-card"
-                      className={`p-5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                      className={`p-5 rounded-2xl border transition-all flex flex-col gap-4 ${
                         activeClientId === 'main'
                           ? 'bg-sky-500/10 border-sky-500/40 ring-1 ring-sky-500/30'
                           : 'bg-slate-900/90 border-slate-800 hover:border-slate-700'
                       }`}
                     >
-                      <div className="flex items-start gap-3.5">
+                      {/* Top: Avatar & Info */}
+                      <div className="flex items-start gap-3.5 flex-1 min-w-0">
                         {profile?.avatarUrl ? (
                           <img
                             src={profile.avatarUrl}
@@ -1956,9 +2098,9 @@ export function DashboardPage() {
                           </div>
                         )}
 
-                        <div className="space-y-1">
+                        <div className="space-y-1 flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="text-sm font-bold text-white">
+                            <h4 className="text-sm font-bold text-white truncate">
                               {profile?.displayName || 'Mi Perfil Principal'}
                             </h4>
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
@@ -1971,14 +2113,14 @@ export function DashboardPage() {
                             )}
                           </div>
 
-                          <div className="flex items-center gap-2 text-xs text-slate-400">
+                          <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
                             <span className="font-mono text-sky-400 font-semibold">@{profile?.username}</span>
                             <span>&bull;</span>
                             <a
                               href={`/${profile?.username}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="hover:text-white inline-flex items-center gap-1 transition-colors"
+                              className="hover:text-white inline-flex items-center gap-1 transition-colors text-slate-400"
                             >
                               <span>Ver página pública</span>
                               <ExternalLink className="w-3 h-3" />
@@ -1991,30 +2133,68 @@ export function DashboardPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 flex-wrap self-end sm:self-center">
-                        <Link
-                          to={`/client/main`}
-                          className="px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700"
-                          title="Ver en formato página exclusiva"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Ver Página</span>
-                        </Link>
+                      {/* Bottom Action Bar: Organized Buttons Toolbar */}
+                      <div className="border-t border-slate-800/80 pt-3 mt-1 flex flex-wrap items-center justify-between gap-2">
+                        {/* Left Group: Utilities */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedQrProfile(profile as any);
+                              setIsQrModalOpen(true);
+                            }}
+                            className="p-2 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1.5 text-xs font-semibold"
+                            title="Código QR del perfil principal"
+                          >
+                            <QrCode className="w-4 h-4 text-sky-400" />
+                            <span>QR</span>
+                          </button>
 
-                        <button
-                          onClick={() => {
-                            setActiveClientId('main');
-                            setActiveTab('media');
-                          }}
-                          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                            activeClientId === 'main'
-                              ? 'bg-sky-400 text-slate-950 shadow-md'
-                              : 'bg-slate-800 hover:bg-slate-700 text-white'
-                          }`}
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                          <span>{activeClientId === 'main' ? 'Editando' : 'Editar'}</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const success = generateAndDownloadVCF(profile as any, {
+                                publicUrl: getPublicProfileUrl(profile?.username || '', profile?.customDomain),
+                              });
+                              if (success) {
+                                setSaveSuccessMsg('¡Ficha de contacto (.vcf) descargada!');
+                                setTimeout(() => setSaveSuccessMsg(null), 3500);
+                              }
+                            }}
+                            className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1.5 text-xs font-semibold"
+                            title="Descargar ficha .vcf"
+                          >
+                            <Contact className="w-4 h-4 text-emerald-400" />
+                            <span>.vcf</span>
+                          </button>
+                        </div>
+
+                        {/* Right Group: Primary actions */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Link
+                            to={`/client/main`}
+                            className="px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700"
+                            title="Ver en formato página exclusiva"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Ver Página</span>
+                          </Link>
+
+                          <button
+                            onClick={() => {
+                              setActiveClientId('main');
+                              setActiveTab('media');
+                            }}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                              activeClientId === 'main'
+                                ? 'bg-sky-400 text-slate-950 shadow-md'
+                                : 'bg-slate-800 hover:bg-slate-700 text-white'
+                            }`}
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                            <span>{activeClientId === 'main' ? 'Editando' : 'Editar'}</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -2030,14 +2210,14 @@ export function DashboardPage() {
                         <div
                           key={client.id}
                           id={`client-card-${client.id}`}
-                          className={`p-5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                          className={`p-5 rounded-2xl border transition-all flex flex-col gap-3.5 ${
                             isSelected
                               ? 'bg-amber-500/5 border-amber-500/40 ring-1 ring-amber-500/20'
                               : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
                           }`}
                         >
-                          {/* Left: Info */}
-                          <div className="flex items-start gap-3.5">
+                          {/* Top: Info & Badges */}
+                          <div className="flex items-start gap-3.5 flex-1 min-w-0">
                             {client.avatarUrl ? (
                               <img
                                 src={client.avatarUrl}
@@ -2050,9 +2230,9 @@ export function DashboardPage() {
                               </div>
                             )}
 
-                            <div className="space-y-1">
+                            <div className="space-y-1.5 flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <h4 className="text-sm font-bold text-white">{client.clientName}</h4>
+                                <h4 className="text-sm font-bold text-white truncate">{client.clientName}</h4>
                                 {client.industry && (
                                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-slate-700">
                                     {client.industry}
@@ -2083,7 +2263,7 @@ export function DashboardPage() {
                                   href={clientPublicUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="hover:text-white inline-flex items-center gap-1 transition-colors"
+                                  className="hover:text-white inline-flex items-center gap-1 transition-colors text-slate-400"
                                 >
                                   <span>Página pública</span>
                                   <ExternalLink className="w-3 h-3" />
@@ -2091,18 +2271,31 @@ export function DashboardPage() {
                               </div>
 
                               {/* Client Assigned Email & Registration Status */}
-                              <div className="flex items-center gap-2 flex-wrap pt-1 text-xs">
+                              <div className="flex flex-wrap items-center gap-2 pt-1 max-w-full">
                                 {client.clientEmail ? (
-                                  <div className="inline-flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
-                                    <Mail className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                                    <span className="font-mono text-slate-200 text-xs">{client.clientEmail}</span>
+                                  <div className="flex flex-wrap items-center gap-2 max-w-full">
+                                    {/* Recuadro de Correo Asignado: diseño limpio, centrado y perfectamente ajustado */}
+                                    <div className="inline-flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800 text-xs shadow-inner max-w-full min-w-0">
+                                      <Mail className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                                      <span className="text-[11px] text-slate-400 font-medium flex-shrink-0">Correo:</span>
+                                      <span
+                                        className="font-mono text-slate-200 font-semibold text-xs truncate max-w-[190px] xs:max-w-[240px] sm:max-w-[320px]"
+                                        title={client.clientEmail}
+                                      >
+                                        {client.clientEmail}
+                                      </span>
+                                    </div>
+
+                                    {/* Insignia de Estado de Vinculación */}
                                     {client.clientStatus === 'active' ? (
-                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 ml-1">
-                                        <ShieldCheck className="w-3 h-3" /> Vinculado & Activo
+                                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 flex-shrink-0">
+                                        <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400" />
+                                        <span>Vinculado & Activo</span>
                                       </span>
                                     ) : (
-                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 ml-1">
-                                        <AlertCircle className="w-3 h-3" /> Invitación pendiente
+                                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-xl bg-amber-500/10 text-amber-300 border border-amber-500/25 flex-shrink-0">
+                                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />
+                                        <span>Invitación pendiente</span>
                                       </span>
                                     )}
                                   </div>
@@ -2114,150 +2307,156 @@ export function DashboardPage() {
                                       setAssignEmailInput('');
                                       setAssignEmailError(null);
                                     }}
-                                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-400/90 hover:text-amber-300 bg-amber-400/10 hover:bg-amber-400/20 px-2.5 py-1 rounded-xl border border-amber-400/25 transition-all"
+                                    className="inline-flex items-center gap-2 text-[11px] font-semibold text-amber-400/90 hover:text-amber-300 bg-amber-400/10 hover:bg-amber-400/20 px-3 py-1.5 rounded-xl border border-amber-400/25 transition-all shadow-xs"
                                   >
-                                    <UserPlus className="w-3.5 h-3.5" />
+                                    <UserPlus className="w-3.5 h-3.5 text-amber-400" />
                                     <span>Asignar correo a este cliente</span>
                                   </button>
                                 )}
                               </div>
 
                               {client.bio && (
-                                <p className="text-xs text-slate-500 line-clamp-1 max-w-md pt-0.5">{client.bio}</p>
+                                <p className="text-xs text-slate-500 line-clamp-1 max-w-md">{client.bio}</p>
                               )}
                             </div>
                           </div>
 
-                          {/* Right: Actions */}
-                          <div className="flex items-center gap-1.5 flex-wrap self-end sm:self-center">
-                            {/* Asignar / Cambiar Correo */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAssignEmailClient(client);
-                                setAssignEmailInput(client.clientEmail || '');
-                                setAssignEmailError(null);
-                              }}
-                              className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1 text-xs font-semibold"
-                              title="Asignar o cambiar el correo electrónico con el que tu cliente iniciará sesión"
-                            >
-                              <MailCheck className="w-4 h-4 text-amber-400" />
-                              <span className="hidden xl:inline">Correo</span>
-                            </button>
+                          {/* Bottom Action Bar: Structured, responsive toolbar for client buttons */}
+                          <div className="border-t border-slate-800/80 pt-3 mt-1 flex flex-wrap items-center justify-between gap-2">
+                            {/* Left Group: Utilities (Correo, Invitar, Copiar Enlace, QR, .vcf) */}
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {/* Asignar / Cambiar Correo */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAssignEmailClient(client);
+                                  setAssignEmailInput(client.clientEmail || '');
+                                  setAssignEmailError(null);
+                                }}
+                                className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1 text-xs font-semibold"
+                                title="Asignar o cambiar el correo electrónico del cliente"
+                              >
+                                <MailCheck className="w-4 h-4 text-amber-400" />
+                                <span className="hidden sm:inline">Correo</span>
+                              </button>
 
-                            {/* Copiar invitación para WhatsApp */}
-                            {client.clientEmail && (
+                              {/* Copiar invitación para WhatsApp */}
+                              {client.clientEmail && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const inviteUrl = `${window.location.origin}/auth?mode=signup&email=${encodeURIComponent(client.clientEmail || '')}`;
+                                    const msg = `¡Hola ${client.clientName}! Tu tarjeta digital ya fue diseñada y está lista. Accede con tu correo ${client.clientEmail} en este enlace: ${inviteUrl}`;
+                                    const ok = await copyToClipboard(msg);
+                                    if (ok) {
+                                      setCopiedInviteMsgId(client.id);
+                                      setSaveSuccessMsg(`¡Mensaje de invitación para ${client.clientName} copiado!`);
+                                      setTimeout(() => {
+                                        setCopiedInviteMsgId(null);
+                                        setSaveSuccessMsg(null);
+                                      }, 3500);
+                                    }
+                                  }}
+                                  className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1 text-xs font-semibold"
+                                  title="Copiar invitación con enlace directo para WhatsApp"
+                                >
+                                  {copiedInviteMsgId === client.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Send className="w-4 h-4 text-emerald-400" />}
+                                  <span className="hidden sm:inline">Invitar</span>
+                                </button>
+                              )}
+
+                              {/* Copiar enlace del portal del cliente */}
                               <button
                                 type="button"
                                 onClick={async () => {
-                                  const inviteUrl = `${window.location.origin}/auth?mode=signup&email=${encodeURIComponent(client.clientEmail || '')}`;
-                                  const msg = `¡Hola ${client.clientName}! Tu tarjeta digital ya fue diseñada y está lista. Accede con tu correo ${client.clientEmail} en este enlace: ${inviteUrl}`;
-                                  const ok = await copyToClipboard(msg);
+                                  const ok = await copyToClipboard(clientPortalUrl);
                                   if (ok) {
-                                    setCopiedInviteMsgId(client.id);
-                                    setSaveSuccessMsg(`¡Mensaje de invitación para ${client.clientName} copiado!`);
-                                    setTimeout(() => {
-                                      setCopiedInviteMsgId(null);
-                                      setSaveSuccessMsg(null);
-                                    }, 3500);
+                                    setSaveSuccessMsg(`¡Enlace del portal exclusivo para "${client.clientName}" copiado!`);
+                                    setTimeout(() => setSaveSuccessMsg(null), 3500);
+                                  }
+                                }}
+                                className="p-2 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1 text-xs font-semibold"
+                                title="Copiar enlace exclusivo para enviárselo a tu cliente"
+                              >
+                                <Copy className="w-4 h-4" />
+                                <span className="hidden sm:inline">Enlace</span>
+                              </button>
+
+                              {/* QR Modal */}
+                              <button
+                                id={`client-qr-${client.id}`}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedQrProfile(client);
+                                  setIsQrModalOpen(true);
+                                }}
+                                className="p-2 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1 text-xs font-semibold"
+                                title="Generar y descargar código QR de este cliente"
+                              >
+                                <QrCode className="w-4 h-4 text-sky-400" />
+                                <span className="hidden sm:inline">QR</span>
+                              </button>
+
+                              {/* Download standard .vcf for this client */}
+                              <button
+                                id={`client-vcf-${client.id}`}
+                                type="button"
+                                onClick={() => {
+                                  const success = generateAndDownloadVCF(client, {
+                                    publicUrl: clientPublicUrl,
+                                  });
+                                  if (success) {
+                                    setSaveSuccessMsg(`¡Ficha de contacto (.vcf) de "${client.clientName}" descargada!`);
+                                    setTimeout(() => setSaveSuccessMsg(null), 3500);
                                   }
                                 }}
                                 className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1 text-xs font-semibold"
-                                title="Copiar invitación con enlace directo para WhatsApp"
+                                title="Descargar ficha de contacto estándar .vcf"
                               >
-                                {copiedInviteMsgId === client.id ? <Check className="w-4 h-4 text-emerald-400" /> : <Send className="w-4 h-4 text-emerald-400" />}
-                                <span className="hidden xl:inline">Invitar</span>
+                                <Contact className="w-4 h-4 text-emerald-400" />
+                                <span className="hidden sm:inline">.vcf</span>
                               </button>
-                            )}
+                            </div>
 
-                            {/* Ver como Cliente (Dedicated Client Page) */}
-                            <Link
-                              to={`/client/${client.id}`}
-                              className="px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 shadow-xs"
-                              title="Abrir la página exclusiva que ve tu cliente (solo su perfil y su información)"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              <span>Página Cliente</span>
-                            </Link>
+                            {/* Right Group: Primary Actions (Ver Portal, Editar, Eliminar) */}
+                            <div className="flex items-center gap-1.5 flex-wrap ml-auto">
+                              {/* Ver como Cliente (Dedicated Client Page) */}
+                              <Link
+                                to={`/client/${client.id}`}
+                                className="px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30 shadow-xs"
+                                title="Abrir la página exclusiva que ve tu cliente"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>Página Cliente</span>
+                              </Link>
 
-                            {/* Copiar enlace del cliente */}
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const ok = await copyToClipboard(clientPortalUrl);
-                                if (ok) {
-                                  setSaveSuccessMsg(`¡Enlace del portal exclusivo para "${client.clientName}" copiado!`);
-                                  setTimeout(() => setSaveSuccessMsg(null), 3500);
-                                }
-                              }}
-                              className="p-2 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1 text-xs font-semibold"
-                              title="Copiar enlace exclusivo para enviárselo a tu cliente"
-                            >
-                              <Copy className="w-4 h-4" />
-                              <span className="hidden xl:inline">Enlace</span>
-                            </button>
+                              {/* Manage in Admin */}
+                              <button
+                                id={`manage-client-${client.id}`}
+                                onClick={() => {
+                                  setActiveClientId(client.id);
+                                  setActiveTab('media');
+                                }}
+                                className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                                  isSelected
+                                    ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20'
+                                    : 'bg-slate-800 hover:bg-slate-700 text-white'
+                                }`}
+                                title="Editar fotos, fondo, datos, enlaces y tarjeta"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                                <span>{isSelected ? 'Editando' : 'Editar'}</span>
+                              </button>
 
-                            {/* Manage in Admin */}
-                            <button
-                              id={`manage-client-${client.id}`}
-                              onClick={() => {
-                                setActiveClientId(client.id);
-                                setActiveTab('media');
-                              }}
-                              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                                isSelected
-                                  ? 'bg-amber-400 text-slate-950 shadow-md'
-                                  : 'bg-slate-800 hover:bg-slate-700 text-white'
-                              }`}
-                              title="Editar fotos, fondo, datos, enlaces y tarjeta"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                              <span>{isSelected ? 'Editando' : 'Editar'}</span>
-                            </button>
-
-                            {/* QR Modal */}
-                            <button
-                              id={`client-qr-${client.id}`}
-                              type="button"
-                              onClick={() => {
-                                setSelectedQrProfile(client);
-                                setIsQrModalOpen(true);
-                              }}
-                              className="p-2 text-slate-400 hover:text-sky-400 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1 text-xs font-semibold"
-                              title="Generar y descargar código QR de este cliente"
-                            >
-                              <QrCode className="w-4 h-4" />
-                              <span className="hidden xl:inline">QR</span>
-                            </button>
-
-                            {/* Download standard .vcf for this client */}
-                            <button
-                              id={`client-vcf-${client.id}`}
-                              type="button"
-                              onClick={() => {
-                                const success = generateAndDownloadVCF(client, {
-                                  publicUrl: clientPublicUrl,
-                                });
-                                if (success) {
-                                  setSaveSuccessMsg(`¡Ficha de contacto (.vcf) de "${client.clientName}" descargada!`);
-                                  setTimeout(() => setSaveSuccessMsg(null), 3500);
-                                }
-                              }}
-                              className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-xl transition-colors flex items-center gap-1 text-xs font-semibold"
-                              title="Descargar ficha de contacto estándar .vcf para guardar en la agenda telefónica"
-                            >
-                              <Contact className="w-4 h-4" />
-                              <span className="hidden xl:inline">.vcf</span>
-                            </button>
-
-                            {/* Delete */}
-                            <button
-                              onClick={() => handleDeleteClient(client)}
-                              className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors"
-                              title="Eliminar cliente"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                              {/* Delete */}
+                              <button
+                                onClick={() => handleDeleteClient(client)}
+                                className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors"
+                                title="Eliminar cliente"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -2728,16 +2927,16 @@ export function DashboardPage() {
             )}
 
             {/* Current status explanation */}
-            <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 text-xs space-y-2">
-              <div className="flex items-center justify-between">
+            <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 text-xs space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-slate-400 font-medium">Estado actual:</span>
                 {assignEmailClient.clientEmail ? (
                   assignEmailClient.clientStatus === 'active' ? (
-                    <span className="text-emerald-400 font-bold flex items-center gap-1 text-[11px]">
+                    <span className="text-emerald-400 font-bold flex items-center gap-1.5 text-[11px] bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
                       <ShieldCheck className="w-3.5 h-3.5" /> Cliente Registrado & Vinculado
                     </span>
                   ) : (
-                    <span className="text-amber-300 font-bold flex items-center gap-1 text-[11px]">
+                    <span className="text-amber-300 font-bold flex items-center gap-1.5 text-[11px] bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20">
                       <AlertCircle className="w-3.5 h-3.5" /> Invitación pendiente (aún no se registra)
                     </span>
                   )
@@ -2745,6 +2944,17 @@ export function DashboardPage() {
                   <span className="text-slate-500 font-medium text-[11px]">Sin correo asignado</span>
                 )}
               </div>
+
+              {assignEmailClient.clientEmail && (
+                <div className="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-xl border border-slate-800 text-xs">
+                  <Mail className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                  <span className="text-slate-400 text-[11px]">Correo asignado:</span>
+                  <span className="font-mono text-white font-semibold text-xs truncate">
+                    {assignEmailClient.clientEmail}
+                  </span>
+                </div>
+              )}
+
               <p className="text-[11px] text-slate-400 leading-relaxed">
                 Asigna el correo con el que tu cliente iniciará sesión. Cuando se registre o entre a la plataforma, verá este perfil ya hecho de inmediato sin tener que crear nada desde cero.
               </p>
@@ -2939,6 +3149,88 @@ export function DashboardPage() {
             }
           }}
         />
+      )}
+
+      {/* Modal de confirmación para eliminar cliente */}
+      {clientToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl text-slate-100 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base sm:text-lg font-bold text-white">
+                ¿Eliminar tarjeta de "{clientToDelete.clientName}"?
+              </h3>
+              <p className="text-xs text-slate-400">
+                Se liberará el enlace público <strong className="text-slate-200">lumen.link/{clientToDelete.username}</strong> y se eliminarán todos los enlaces y datos configurados. Esta acción no se puede deshacer.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setClientToDelete(null)}
+                disabled={isDeletingClient}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteClient}
+                disabled={isDeletingClient}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-lg shadow-rose-600/20 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isDeletingClient ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Sí, Eliminar Cliente</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación para desvincular correo de cliente */}
+      {clientToUnlinkEmail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl text-slate-100 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-bold text-white">
+                ¿Desvincular correo de acceso?
+              </h3>
+              <p className="text-xs text-slate-400">
+                Se removerá el acceso de <strong className="text-slate-200">{clientToUnlinkEmail.clientEmail}</strong> a la tarjeta digital de {clientToUnlinkEmail.clientName}.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setClientToUnlinkEmail(null)}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmUnlinkEmail}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-all"
+              >
+                Desvincular Correo
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Mobile Ergonomic Bottom Tab Bar (Thumb-Zone navigation for phones < 768px) */}

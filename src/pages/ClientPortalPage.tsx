@@ -35,16 +35,20 @@ import {
   PhoneCall,
   Server,
   LogOut,
+  Sliders,
+  Video,
 } from 'lucide-react';
 import { doc, getDoc, updateDoc, setDoc, collection, query, where, getDocs, addDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from '../context/AuthContext';
 import { LinkPresetsSelector } from '../components/LinkPresetsSelector';
 import { LinkPreset } from '../utils/linkPresets';
-import { ClientProfile, UserProfile, LinkItem, ThemePreferences, VCardDetails } from '../types';
+import { VideoEmbedSettings } from '../components/VideoEmbedSettings';
+import { ClientProfile, UserProfile, LinkItem, ThemePreferences, VCardDetails, ProfileModulesConfig } from '../types';
 import { ProfileView } from '../components/ProfileView';
 import { QRCodeGeneratorModal } from '../components/QRCodeModal';
 import { ImageDropzone } from '../components/ImageDropzone';
+import { BackgroundPresetsGallery } from '../components/BackgroundPresetsGallery';
 import { CustomDomainSettings } from '../components/CustomDomainSettings';
 import { generateAndDownloadVCF, parseVCardString } from '../utils/vcard';
 import { CURATED_BACKGROUND_PRESETS, CURATED_CARD_TEMPLATES } from '../utils/imageUpload';
@@ -80,7 +84,7 @@ export function ClientPortalPage() {
 
   // View state: 'card' (interactive view) | 'editor' (100% editable settings)
   const [activeTab, setActiveTab] = useState<'card' | 'editor'>('card');
-  const [editorSection, setEditorSection] = useState<'media' | 'info' | 'contact' | 'links' | 'appearance' | 'domain'>('media');
+  const [editorSection, setEditorSection] = useState<'media' | 'video' | 'info' | 'contact' | 'links' | 'appearance' | 'domain'>('media');
 
   // Modals & previews
   const [showQRModal, setShowQRModal] = useState(false);
@@ -91,6 +95,8 @@ export function ClientPortalPage() {
   // Link editing modal/state
   const [isAddLinkOpen, setIsAddLinkOpen] = useState(false);
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+  const [linkToDeleteId, setLinkToDeleteId] = useState<string | null>(null);
+  const [isDeletingLink, setIsDeletingLink] = useState(false);
   const [newLinkTitle, setNewLinkTitle] = useState('');
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [newLinkGroup, setNewLinkGroup] = useState('');
@@ -103,6 +109,7 @@ export function ClientPortalPage() {
   const [customDomain, setCustomDomain] = useState('');
   const [isPremium, setIsPremium] = useState(true);
   const [theme, setTheme] = useState<ThemePreferences>(THEME_PRESETS[0].theme);
+  const [modules, setModules] = useState<ProfileModulesConfig | undefined>(undefined);
   const [vcard, setVcard] = useState<VCardDetails>({
     fullName: '',
     company: '',
@@ -392,6 +399,7 @@ export function ClientPortalPage() {
         setCustomDomain(resolvedClientData.customDomain || '');
         setIsPremium(resolvedClientData.isPremium ?? true);
         setTheme(resolvedClientData.theme_preferences || THEME_PRESETS[0].theme);
+        setModules(resolvedClientData.modules);
         setVcard(
           resolvedClientData.vcard_details || {
             fullName: resolvedClientData.displayName || resolvedClientData.clientName,
@@ -454,6 +462,7 @@ export function ClientPortalPage() {
       ...vcard,
       fullName: displayName || clientName || 'Contacto',
     },
+    modules: modules,
   };
 
   // Save all profile changes
@@ -481,6 +490,7 @@ export function ClientPortalPage() {
         isPremium,
         theme_preferences: theme,
         vcard_details: updatedVcard,
+        modules: cleanFirestoreData(modules || {}),
         updatedAt: new Date().toISOString(),
       });
 
@@ -514,6 +524,7 @@ export function ClientPortalPage() {
               avatarUrl: avatarUrl.trim(),
               theme_preferences: theme,
               vcard_details: updatedVcard,
+              modules: modules,
             }
           : null
       );
@@ -681,13 +692,22 @@ export function ClientPortalPage() {
     }
   };
 
-  const handleDeleteLink = async (linkId: string) => {
-    if (!confirm('¿Estás seguro de eliminar este enlace?')) return;
+  const handleDeleteLink = (linkId: string) => {
+    setLinkToDeleteId(linkId);
+  };
+
+  const handleConfirmDeleteLink = async () => {
+    if (!linkToDeleteId) return;
+    setIsDeletingLink(true);
     try {
-      await deleteDoc(doc(db, 'links', linkId));
-      setLinks((prev) => prev.filter((l) => l.id !== linkId));
+      const id = linkToDeleteId;
+      await deleteDoc(doc(db, 'links', id));
+      setLinks((prev) => prev.filter((l) => l.id !== id));
+      setLinkToDeleteId(null);
     } catch (err) {
       console.error('Error al eliminar enlace:', err);
+    } finally {
+      setIsDeletingLink(false);
     }
   };
 
@@ -1103,6 +1123,7 @@ export function ClientPortalPage() {
               <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 overflow-x-auto gap-1">
                 {[
                   { id: 'media', label: 'Foto, Tarjeta y Fondo', icon: Camera },
+                  { id: 'video', label: 'Video / En Vivo', icon: Video },
                   { id: 'info', label: 'Datos Básicos', icon: User },
                   { id: 'contact', label: 'Contacto (vCard)', icon: Phone },
                   { id: 'links', label: 'Enlaces', icon: Globe },
@@ -1145,14 +1166,34 @@ export function ClientPortalPage() {
                   </div>
 
                   {/* 1. Foto de Perfil Dropzone */}
-                  <ImageDropzone
-                    type="avatar"
-                    currentValue={avatarUrl}
-                    onChange={(url) => setAvatarUrl(url)}
-                    onRemove={() => setAvatarUrl('')}
-                    label="1. Foto de Perfil o Logotipo"
-                    description="Sube una foto de tu rostro o el logo corporativo de tu negocio desde tu dispositivo"
-                  />
+                  <div className="space-y-2">
+                    <ImageDropzone
+                      type="avatar"
+                      currentValue={avatarUrl}
+                      onChange={(url) => setAvatarUrl(url)}
+                      onRemove={() => setAvatarUrl('')}
+                      label="1. Foto de Perfil o Logotipo"
+                      description="Sube una foto de tu rostro o el logo corporativo de tu negocio desde tu dispositivo"
+                    />
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setAvatarUrl('https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png')}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-xs font-semibold text-sky-400 hover:text-sky-300 transition-all shadow-xs"
+                        title="Usar mi logo oficial como avatar"
+                      >
+                        <img
+                          src="/logo.png"
+                          alt="Logo"
+                          className="w-4 h-4 rounded-sm object-contain"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png';
+                          }}
+                        />
+                        <span>Usar logotipo oficial LumenBase</span>
+                      </button>
+                    </div>
+                  </div>
 
                   {/* 2. Plantilla de la Tarjeta Digital Dropzone */}
                   <ImageDropzone
@@ -1238,41 +1279,76 @@ export function ClientPortalPage() {
                     onOverlayChange={(ov) => setTheme((prev) => ({ ...prev, bgImageOverlay: ov }))}
                   />
 
-                  {/* Fondos Prediseñados Rápidos */}
-                  <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 sm:p-5">
-                    <h4 className="text-xs font-bold text-white mb-2 flex items-center gap-1.5">
-                      <Palette className="w-3.5 h-3.5 text-indigo-400" />
-                      Galería de Fondos de Pantalla
-                    </h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {CURATED_BACKGROUND_PRESETS.map((preset) => (
-                        <button
-                          key={preset.id}
-                          type="button"
-                          onClick={() => {
-                            setTheme((prev) => ({
-                              ...prev,
-                              bgType: 'gradient',
-                              bgGradient: preset.gradient,
-                              bgImageUrl: undefined,
-                              cardTextColor: preset.textColor,
-                              cardBgColor: preset.cardBg,
-                              accentColor: preset.accent,
-                            }));
-                          }}
-                          className="p-2.5 rounded-xl border border-slate-800 hover:border-sky-500/60 text-left transition-all group"
-                          style={{ background: preset.gradient }}
-                        >
-                          <span className="block text-xs font-bold text-white drop-shadow-md">
-                            {preset.name}
-                          </span>
-                          <span className="block text-[10px] text-white/70 drop-shadow-xs">
-                            {preset.category}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  {/* Galería Completa de Fondos Prediseñados */}
+                  <BackgroundPresetsGallery
+                    currentGradient={theme.bgGradient}
+                    currentBgType={theme.bgType}
+                    onSelect={(preset) => {
+                      setTheme((prev) => ({
+                        ...prev,
+                        bgType: 'gradient',
+                        bgGradient: preset.gradient,
+                        bgImageUrl: undefined,
+                        cardTextColor: preset.textColor,
+                        cardBgColor: preset.cardBg,
+                        accentColor: preset.accent,
+                        presetId: 'custom',
+                      }));
+                    }}
+                    onResetToSolid={() => {
+                      setTheme((prev) => ({
+                        ...prev,
+                        bgType: 'solid',
+                        bgGradient: undefined,
+                        bgImageUrl: undefined,
+                        bgColor: '#0f172a',
+                        cardTextColor: '#ffffff',
+                        cardBgColor: '#1e293b',
+                        accentColor: '#38bdf8',
+                        presetId: 'custom',
+                      }));
+                    }}
+                  />
+
+                  {/* 4. Video o Transmisión en Vivo al final de la tarjeta */}
+                  <VideoEmbedSettings
+                    config={
+                      modules?.videoEmbed || {
+                        enabled: false,
+                        videoUrl: '',
+                        title: 'Transmisión en Vivo',
+                        isLive: false,
+                      }
+                    }
+                    onChange={(updatedVideo) => {
+                      setModules((prev) => ({
+                        ...(prev || {}),
+                        videoEmbed: updatedVideo,
+                      }));
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* SECTION: VIDEO / TRANSMISIÓN EN VIVO DEDICADO */}
+              {editorSection === 'video' && (
+                <div className="space-y-5">
+                  <VideoEmbedSettings
+                    config={
+                      modules?.videoEmbed || {
+                        enabled: false,
+                        videoUrl: '',
+                        title: 'Transmisión en Vivo',
+                        isLive: false,
+                      }
+                    }
+                    onChange={(updatedVideo) => {
+                      setModules((prev) => ({
+                        ...(prev || {}),
+                        videoEmbed: updatedVideo,
+                      }));
+                    }}
+                  />
                 </div>
               )}
 
@@ -1962,6 +2038,51 @@ export function ClientPortalPage() {
           }
         }}
       />
+
+      {/* Modal de confirmación para eliminar enlace */}
+      {linkToDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-sm w-full shadow-2xl text-slate-100 space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-bold text-white">¿Eliminar este enlace?</h3>
+              <p className="text-xs text-slate-400">
+                El botón se eliminará permanentemente de tu tarjeta digital.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setLinkToDeleteId(null)}
+                disabled={isDeletingLink}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteLink}
+                disabled={isDeletingLink}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all shadow-lg shadow-rose-600/20 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {isDeletingLink ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Sí, Eliminar</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

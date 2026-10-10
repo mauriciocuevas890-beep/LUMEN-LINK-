@@ -127,6 +127,7 @@ export function PublicProfilePage() {
                 avatarUrl: clientData.avatarUrl,
                 theme_preferences: clientData.theme_preferences,
                 vcard_details: clientData.vcard_details,
+                modules: clientData.modules,
               };
             } else if (rawId !== cleanUsername) {
               // Check original casing if different
@@ -146,6 +147,7 @@ export function PublicProfilePage() {
                   avatarUrl: clientData.avatarUrl,
                   theme_preferences: clientData.theme_preferences,
                   vcard_details: clientData.vcard_details,
+                  modules: clientData.modules,
                 };
               }
             }
@@ -182,6 +184,7 @@ export function PublicProfilePage() {
                     avatarUrl: clientData.avatarUrl,
                     theme_preferences: clientData.theme_preferences,
                     vcard_details: clientData.vcard_details,
+                    modules: clientData.modules,
                   };
                 }
               }

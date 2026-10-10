@@ -29,6 +29,8 @@ import {
   Calendar,
   Send,
   MessageSquare,
+  Video,
+  Radio,
 } from 'lucide-react';
 import { UserProfile, LinkItem, ThemePreferences } from '../types';
 import { downloadVCard, generateAndDownloadVCF } from '../utils/vcard';
@@ -36,6 +38,12 @@ import { QRCodeGeneratorModal } from './QRCodeModal';
 import { getPublicProfileUrl, formatExternalUrl } from '../utils/urlHelper';
 import { copyToClipboard } from '../utils/clipboard';
 import { getOfficialBrandIcon } from './BrandIcons';
+import { ProfileModulesView } from './ProfileModulesView';
+import { LeadCaptureModal } from './LeadCaptureModal';
+import { parseVideoUrl } from '../utils/videoHelper';
+import { LeadContactItem } from '../types';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 interface ProfileViewProps {
   profile: UserProfile;
@@ -59,6 +67,29 @@ export function ProfileView({
   const [vcardDownloaded, setVcardDownloaded] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
+  const [showLeadModal, setShowLeadModal] = useState(false);
+
+  const handleSaveLead = async (leadData: Omit<LeadContactItem, 'id' | 'createdAt'>) => {
+    const newLead: LeadContactItem = {
+      id: `lead_${Date.now()}`,
+      ...leadData,
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      const profileId = (profile as any).id || profile.uid;
+      const isClientDoc = (profile as any).ownerUid !== undefined;
+      const collectionName = isClientDoc ? 'client_profiles' : 'users';
+      if (profileId) {
+        const docRef = doc(db, collectionName, profileId);
+        await updateDoc(docRef, {
+          capturedLeads: arrayUnion(newLead),
+        });
+      }
+    } catch (err) {
+      console.error('Error saving lead:', err);
+    }
+  };
 
   const theme: ThemePreferences = profile.theme_preferences || {
     bgColor: '#0f172a',
@@ -355,54 +386,75 @@ export function ProfileView({
         )}
 
         {/* Profile Avatar */}
-        <div className="relative mb-4 group z-10">
-          {profile.avatarUrl ? (
-            <img
-              src={profile.avatarUrl}
-              alt={profile.displayName || profile.username}
-              className="w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover shadow-xl border-4"
-              style={{
-                borderColor: theme.cardBorderColor || 'rgba(255,255,255,0.2)',
-              }}
-              onError={(e) => {
-                // Fallback if image fails to load
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-          ) : (
-            <div
-              className="w-24 h-24 sm:w-28 sm:h-28 rounded-full flex items-center justify-center text-3xl sm:text-4xl font-bold shadow-xl border-4"
-              style={{
-                backgroundColor: theme.cardBgColor || '#38bdf8',
-                color: theme.cardTextColor || '#ffffff',
-                borderColor: theme.cardBorderColor || 'rgba(255,255,255,0.2)',
-              }}
-            >
-              {(profile.displayName || profile.username || 'U').charAt(0).toUpperCase()}
-            </div>
-          )}
+        {(() => {
+          const isSquircle = profile.modules?.visualStyle?.avatarShape === 'squircle';
+          const avatarRadiusClass = isSquircle ? 'rounded-3xl' : 'rounded-full';
 
-          {/* Quick upload overlay on avatar */}
-          {onEditAvatar && (
-            <button
-              type="button"
-              onClick={onEditAvatar}
-              className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-semibold cursor-pointer shadow-lg"
-              title="Subir foto desde tu dispositivo"
-            >
-              <Camera className="w-5 h-5 text-sky-400 mb-0.5" />
-              <span>Subir Foto</span>
-            </button>
-          )}
-        </div>
+          return (
+            <div className="relative mb-4 group z-10">
+              {profile.avatarUrl ? (
+                <img
+                  src={profile.avatarUrl}
+                  alt={profile.displayName || profile.username}
+                  className={`w-24 h-24 sm:w-28 sm:h-28 ${avatarRadiusClass} object-cover shadow-xl border-4 transition-all`}
+                  style={{
+                    borderColor: theme.cardBorderColor || 'rgba(255,255,255,0.2)',
+                  }}
+                  onError={(e) => {
+                    // Fallback if image fails to load
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div
+                  className={`w-24 h-24 sm:w-28 sm:h-28 ${avatarRadiusClass} flex items-center justify-center text-3xl sm:text-4xl font-bold shadow-xl border-4 transition-all`}
+                  style={{
+                    backgroundColor: theme.cardBgColor || '#38bdf8',
+                    color: theme.cardTextColor || '#ffffff',
+                    borderColor: theme.cardBorderColor || 'rgba(255,255,255,0.2)',
+                  }}
+                >
+                  {(profile.displayName || profile.username || 'U').charAt(0).toUpperCase()}
+                </div>
+              )}
+
+              {/* Quick upload overlay on avatar */}
+              {onEditAvatar && (
+                <button
+                  type="button"
+                  onClick={onEditAvatar}
+                  className={`absolute inset-0 ${avatarRadiusClass} bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-semibold cursor-pointer shadow-lg`}
+                  title="Subir foto desde tu dispositivo"
+                >
+                  <Camera className="w-5 h-5 text-sky-400 mb-0.5" />
+                  <span>Subir Foto</span>
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Display Name & Username */}
         <h1
           id="profile-display-name"
-          className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-1"
+          className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-1 flex items-center justify-center gap-2"
           style={{ color: theme.cardTextColor }}
         >
-          {profile.displayName || profile.username}
+          <span>{profile.displayName || profile.username}</span>
+          {profile.modules?.visualStyle?.verifiedBadge && (
+            <span
+              className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-white shadow-xs ${
+                profile.modules.visualStyle.verifiedBadgeColor === 'gold'
+                  ? 'bg-amber-500'
+                  : profile.modules.visualStyle.verifiedBadgeColor === 'emerald'
+                  ? 'bg-emerald-500'
+                  : 'bg-sky-500'
+              }`}
+              title="Perfil Verificado Oficial"
+            >
+              <Check className="w-3 h-3 stroke-[3]" />
+            </span>
+          )}
         </h1>
 
         <div
@@ -566,35 +618,54 @@ export function ProfileView({
           </div>
         )}
 
+        {/* Interactive Profile Modules: Social Strip, Hours, Location, Bank Details, Catalog, Reviews, Leads */}
+        <ProfileModulesView
+          modules={profile.modules}
+          theme={theme}
+          onOpenLeadCapture={() => setShowLeadModal(true)}
+          onLinkClick={handleLinkClick}
+        />
+
         {/* Active Links - Organized by Group */}
         <div className="w-full space-y-6">
           {/* Ungrouped Links */}
           {ungroupedLinks.length > 0 && (
             <div className="space-y-3">
-              {ungroupedLinks.map((link) => (
-                <a
-                  key={link.id}
-                  id={`link-item-${link.id}`}
-                  href={formatExternalUrl(link.url)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => handleLinkClick(e, link.url)}
-                  style={getLinkCardStyle()}
-                  className={`w-full p-4 flex items-center justify-between transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-sm font-medium ${getButtonRadiusClass(
-                    theme.buttonStyle
-                  )}`}
-                >
-                  <div className="flex items-center gap-3.5 min-w-0 pr-2">
-                    <span className="flex-shrink-0">
-                      {getSocialIcon(link.url, link.title)}
-                    </span>
-                    <span className="truncate text-left text-sm sm:text-base font-semibold">
-                      {link.title}
-                    </span>
-                  </div>
-                  <ExternalLink className="w-4 h-4 opacity-60 flex-shrink-0" />
-                </a>
-              ))}
+              {ungroupedLinks.map((link) => {
+                const isSpotlight = profile.modules?.visualStyle?.spotlightLinkId === link.id;
+
+                return (
+                  <a
+                    key={link.id}
+                    id={`link-item-${link.id}`}
+                    href={formatExternalUrl(link.url)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => handleLinkClick(e, link.url)}
+                    style={getLinkCardStyle()}
+                    className={`w-full p-4 flex items-center justify-between transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-sm font-medium ${getButtonRadiusClass(
+                      theme.buttonStyle
+                    )} ${
+                      isSpotlight
+                        ? 'ring-2 ring-amber-400/90 shadow-lg shadow-amber-500/20'
+                        : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0 pr-2">
+                      <span className="flex-shrink-0">
+                        {getSocialIcon(link.url, link.title)}
+                      </span>
+                      <span className="truncate text-left text-sm sm:text-base font-semibold flex items-center gap-1.5">
+                        <span>{link.title}</span>
+                        {isSpotlight && (
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 animate-pulse" />
+                        )}
+                      </span>
+                    </div>
+                    <ExternalLink className="w-4 h-4 opacity-60 flex-shrink-0" />
+                  </a>
+                );
+              })}
             </div>
           )}
 
@@ -619,30 +690,41 @@ export function ProfileView({
               </div>
 
               <div className="space-y-3">
-                {groupLinks.map((link) => (
-                  <a
-                    key={link.id}
-                    id={`link-item-${link.id}`}
-                    href={formatExternalUrl(link.url)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => handleLinkClick(e, link.url)}
-                    style={getLinkCardStyle()}
-                    className={`w-full p-4 flex items-center justify-between transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-sm font-medium ${getButtonRadiusClass(
-                      theme.buttonStyle
-                    )}`}
-                  >
-                    <div className="flex items-center gap-3.5 min-w-0 pr-2">
-                      <span className="flex-shrink-0">
-                        {getSocialIcon(link.url, link.title)}
-                      </span>
-                      <span className="truncate text-left text-sm sm:text-base font-semibold">
-                        {link.title}
-                      </span>
-                    </div>
-                    <ExternalLink className="w-4 h-4 opacity-60 flex-shrink-0" />
-                  </a>
-                ))}
+                {groupLinks.map((link) => {
+                  const isSpotlight = profile.modules?.visualStyle?.spotlightLinkId === link.id;
+
+                  return (
+                    <a
+                      key={link.id}
+                      id={`link-item-${link.id}`}
+                      href={formatExternalUrl(link.url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => handleLinkClick(e, link.url)}
+                      style={getLinkCardStyle()}
+                      className={`w-full p-4 flex items-center justify-between transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] shadow-sm font-medium ${getButtonRadiusClass(
+                        theme.buttonStyle
+                      )} ${
+                        isSpotlight
+                          ? 'ring-2 ring-amber-400/90 shadow-lg shadow-amber-500/20'
+                          : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0 pr-2">
+                        <span className="flex-shrink-0">
+                          {getSocialIcon(link.url, link.title)}
+                        </span>
+                        <span className="truncate text-left text-sm sm:text-base font-semibold flex items-center gap-1.5">
+                          <span>{link.title}</span>
+                          {isSpotlight && (
+                            <Sparkles className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 animate-pulse" />
+                          )}
+                        </span>
+                      </div>
+                      <ExternalLink className="w-4 h-4 opacity-60 flex-shrink-0" />
+                    </a>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -660,6 +742,111 @@ export function ProfileView({
             </div>
           )}
         </div>
+
+        {/* Video o Transmisión en Vivo al final de la tarjeta */}
+        {profile.modules?.videoEmbed?.enabled && (
+          <div className="w-full mt-6 space-y-2.5">
+            {(() => {
+              const videoConfig = profile.modules.videoEmbed;
+              const parsed = parseVideoUrl(videoConfig.videoUrl);
+              const isLive = Boolean(videoConfig.isLive || parsed.isLiveDetected);
+
+              if (!parsed.isValid || !parsed.embedUrl) {
+                if (isPreview) {
+                  return (
+                    <div
+                      className="p-5 rounded-2xl border border-dashed text-center space-y-1.5 opacity-80"
+                      style={{
+                        borderColor: theme.cardBorderColor || 'rgba(255,255,255,0.2)',
+                        color: theme.cardTextColor,
+                      }}
+                    >
+                      <Video className="w-6 h-6 mx-auto opacity-60 mb-1" />
+                      <p className="text-xs font-bold">Video / Transmisión en Vivo</p>
+                      <p className="text-[11px] opacity-70">
+                        Pega una URL de YouTube, YouTube Live, Twitch o Vimeo en la pestaña de configuración para reproducirlo aquí.
+                      </p>
+                    </div>
+                  );
+                }
+                return null;
+              }
+
+              return (
+                <div className="space-y-2">
+                  {/* Header con título y badge de En Vivo */}
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isLive ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-wider shadow-sm animate-pulse shrink-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                          <span>EN VIVO</span>
+                        </span>
+                      ) : (
+                        <span
+                          className="p-1 rounded-md bg-black/10 dark:bg-white/10 shrink-0"
+                          style={{ color: theme.cardTextColor }}
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                      <span
+                        className="text-xs sm:text-sm font-bold truncate"
+                        style={{ color: theme.cardTextColor }}
+                      >
+                        {videoConfig.title || (isLive ? 'Transmisión en Vivo' : 'Video')}
+                      </span>
+                    </div>
+
+                    {parsed.platform && (
+                      <span
+                        className="text-[10px] font-semibold opacity-60 uppercase tracking-wider"
+                        style={{ color: theme.cardTextColor }}
+                      >
+                        {parsed.platform}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Reproductor responsivo 16:9 sin consumir almacenamiento */}
+                  <div
+                    className="w-full aspect-video rounded-2xl overflow-hidden shadow-lg border relative bg-black/40 backdrop-blur-xs"
+                    style={{
+                      borderColor: theme.cardBorderColor || 'rgba(255,255,255,0.15)',
+                    }}
+                  >
+                    <iframe
+                      src={parsed.embedUrl}
+                      title={videoConfig.title || 'Video'}
+                      className="w-full h-full border-0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      loading="lazy"
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Powered by LumenBase NFC footer badge (non-interactive watermark) */}
+        <div className="mt-10 text-center select-none pb-4 pointer-events-none">
+          <div
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md bg-black/10 dark:bg-white/10 text-xs font-semibold opacity-70 cursor-default pointer-events-none select-none"
+            style={{ color: theme.cardTextColor }}
+          >
+            <img
+              src="/logo.png"
+              alt="LumenBase Logo"
+              className="w-4 h-4 rounded-sm object-contain"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png';
+              }}
+            />
+            <span>LumenBase NFC</span>
+          </div>
+        </div>
       </div>
       </div>
 
@@ -670,6 +857,16 @@ export function ProfileView({
         profile={profile}
         customTitle={`Código QR • @${profile.username}`}
         viewOnly={true}
+      />
+
+      {/* Lead Capture Modal */}
+      <LeadCaptureModal
+        isOpen={showLeadModal}
+        onClose={() => setShowLeadModal(false)}
+        onSubmitLead={handleSaveLead}
+        recipientName={profile.displayName || profile.username}
+        formTitle={profile.modules?.leadCapture?.formTitle}
+        successMessage={profile.modules?.leadCapture?.successMessage}
       />
     </div>
   );

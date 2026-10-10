@@ -21,7 +21,7 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
-import { UserProfile, ThemePreferences, VCardDetails } from '../types';
+import { UserProfile, ThemePreferences, VCardDetails, ProfileModulesConfig } from '../types';
 import { DEFAULT_THEME } from '../utils/themePresets';
 import { handleFirestoreError, OperationType } from '../utils/firestore-error';
 import { cleanFirestoreData } from '../utils/cleanFirestoreData';
@@ -63,7 +63,9 @@ interface AuthContextType {
     avatarUrl?: string;
     theme_preferences?: ThemePreferences;
     vcard_details?: VCardDetails;
+    modules?: ProfileModulesConfig;
   }) => Promise<void>;
+  updateModules: (modules: ProfileModulesConfig) => Promise<void>;
   claimUsername: (username: string, initialData?: Partial<UserProfile>) => Promise<{ success: boolean; error?: string }>;
   isUsernameAvailable: (username: string) => Promise<boolean>;
 }
@@ -427,6 +429,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     avatarUrl?: string;
     theme_preferences?: ThemePreferences;
     vcard_details?: VCardDetails;
+    modules?: ProfileModulesConfig;
   }) => {
     if (!currentUser) throw new Error('Usuario no autenticado.');
     const userDocRef = doc(db, 'users', currentUser.uid);
@@ -444,6 +447,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile((prev) => ({
         ...(prev || getFallbackProfile(currentUser.uid, currentUser.email)),
         ...cleanedData,
+      }));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${currentUser.uid}`);
+      throw err;
+    }
+  };
+
+  const updateModules = async (modules: ProfileModulesConfig) => {
+    if (!currentUser) throw new Error('Usuario no autenticado.');
+    const userDocRef = doc(db, 'users', currentUser.uid);
+    const cleanedModules = cleanFirestoreData(modules);
+    try {
+      await setDoc(
+        userDocRef,
+        {
+          uid: currentUser.uid,
+          modules: cleanedModules,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+      setProfile((prev) => ({
+        ...(prev || getFallbackProfile(currentUser.uid, currentUser.email)),
+        modules: cleanedModules,
       }));
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `users/${currentUser.uid}`);
@@ -473,6 +500,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateVCard,
         updateBasicProfile,
         updateFullProfile,
+        updateModules,
         claimUsername,
         isUsernameAvailable,
       }}

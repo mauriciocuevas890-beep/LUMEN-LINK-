@@ -146,10 +146,15 @@ export function OnboardingPage() {
       </div>
 
       <div className="sm:mx-auto sm:w-full sm:max-w-xl text-center mb-8">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/20 mx-auto mb-4">
-          <Sparkles className="w-6 h-6" />
-        </div>
-        <h1 className="text-3xl font-extrabold text-white tracking-tight">Claim Your Unique Lumen.Link</h1>
+        <img
+          src="/logo.png"
+          alt="LumenBase Logo"
+          className="w-16 h-16 rounded-2xl object-contain bg-slate-900 border border-slate-800 p-1 shadow-lg shadow-sky-500/20 mx-auto mb-4"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = 'https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png';
+          }}
+        />
+        <h1 className="text-3xl font-extrabold text-white tracking-tight">Crea tu Enlace en LumenBase NFC</h1>
         <p className="text-sm text-slate-400 mt-2 max-w-md mx-auto">
           Your username establishes your permanent public URL and digital business card route.
         </p>

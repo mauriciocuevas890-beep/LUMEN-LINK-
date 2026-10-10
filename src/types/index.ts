@@ -40,6 +40,116 @@ export interface CustomDomainConfig {
   lastChecked?: string;
 }
 
+export interface SocialIconsStrip {
+  enabled: boolean;
+  whatsapp?: string;
+  instagram?: string;
+  tiktok?: string;
+  linkedin?: string;
+  facebook?: string;
+  twitter?: string;
+  youtube?: string;
+  telegram?: string;
+  spotify?: string;
+}
+
+export interface BusinessHoursModule {
+  enabled: boolean;
+  scheduleText?: string; // e.g. "Lun - Vie: 9:00 AM - 7:00 PM | Sáb: 10:00 AM - 2:00 PM"
+  openHour?: number; // 0-23
+  closeHour?: number; // 0-23
+  openDays?: number[]; // [1,2,3,4,5] (1=Mon, 7=Sun)
+}
+
+export interface LocationModule {
+  enabled: boolean;
+  addressTitle?: string;
+  addressText?: string;
+  googleMapsUrl?: string;
+  wazeUrl?: string;
+}
+
+export interface BankDetailsModule {
+  enabled: boolean;
+  bankName?: string;
+  accountHolder?: string;
+  clabeNumber?: string;
+  accountNumber?: string;
+  conceptNote?: string;
+}
+
+export interface ServiceProductItem {
+  id: string;
+  title: string;
+  price?: string;
+  description?: string;
+  imageUrl?: string;
+  whatsappInquiryMessage?: string;
+}
+
+export interface CatalogModule {
+  enabled: boolean;
+  sectionTitle?: string;
+  items: ServiceProductItem[];
+}
+
+export interface VisualBadgingStyle {
+  avatarShape?: 'circle' | 'squircle' | 'rounded';
+  verifiedBadge?: boolean;
+  verifiedBadgeColor?: 'blue' | 'gold' | 'emerald';
+  spotlightLinkId?: string;
+}
+
+export interface TestimonialItem {
+  id: string;
+  authorName: string;
+  rating?: number;
+  text: string;
+  roleOrDate?: string;
+}
+
+export interface TestimonialsModule {
+  enabled: boolean;
+  googleReviewsUrl?: string;
+  showGoogleButton?: boolean;
+  items: TestimonialItem[];
+}
+
+export interface LeadContactItem {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  note?: string;
+  createdAt: string;
+}
+
+export interface LeadCaptureModule {
+  enabled: boolean;
+  buttonLabel?: string;
+  formTitle?: string;
+  successMessage?: string;
+}
+
+export interface VideoEmbedModule {
+  enabled: boolean;
+  videoUrl?: string; // YouTube, YouTube Live, Vimeo, Twitch
+  title?: string; // Optional section title (e.g. "Transmisión en Vivo", "Video Destacado")
+  isLive?: boolean; // Highlight with a pulsing red 'EN VIVO' badge
+}
+
+export interface ProfileModulesConfig {
+  socialStrip?: SocialIconsStrip;
+  businessHours?: BusinessHoursModule;
+  location?: LocationModule;
+  bankDetails?: BankDetailsModule;
+  catalog?: CatalogModule;
+  visualStyle?: VisualBadgingStyle;
+  testimonials?: TestimonialsModule;
+  leadCapture?: LeadCaptureModule;
+  videoEmbed?: VideoEmbedModule;
+}
+
 export interface UserProfile {
   uid: string;
   username: string;
@@ -54,6 +164,8 @@ export interface UserProfile {
   customDomainConfig?: CustomDomainConfig;
   theme_preferences: ThemePreferences;
   vcard_details: VCardDetails;
+  modules?: ProfileModulesConfig;
+  capturedLeads?: LeadContactItem[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -77,6 +189,8 @@ export interface ClientProfile {
   avatarUrl?: string;
   theme_preferences: ThemePreferences;
   vcard_details: VCardDetails;
+  modules?: ProfileModulesConfig;
+  capturedLeads?: LeadContactItem[];
   createdAt?: string;
   updatedAt?: string;
 }

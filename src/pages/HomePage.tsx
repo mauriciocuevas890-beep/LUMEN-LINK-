@@ -128,11 +128,16 @@ export function HomePage() {
       {/* Top Navigation */}
       <header className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5 font-bold text-xl tracking-tight text-white">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <span>Lumen<span className="text-sky-400">.Link</span></span>
+          <Link to="/" className="flex items-center gap-2.5 font-bold text-xl tracking-tight text-white group">
+            <img
+              src="/logo.png"
+              alt="LumenBase Logo"
+              className="w-9 h-9 rounded-xl object-contain bg-slate-900 border border-slate-800 p-0.5 shadow-md shadow-sky-500/10 group-hover:scale-105 transition-transform"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png';
+              }}
+            />
+            <span>LumenBase<span className="text-sky-400"> NFC</span></span>
           </Link>
 
           <div className="flex items-center gap-3">
@@ -353,7 +358,15 @@ export function HomePage() {
       <footer className="border-t border-slate-800/80 py-8 text-center text-xs text-slate-500">
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-300">Lumen.Link</span>
+            <img
+              src="/logo.png"
+              alt="LumenBase Logo"
+              className="w-5 h-5 rounded-md object-contain"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = 'https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png';
+              }}
+            />
+            <span className="font-semibold text-slate-300">LumenBase NFC</span>
             <span>&bull;</span>
             <span>Tarjetas Digitales & Link-in-Bio</span>
           </div>

@@ -43,6 +43,7 @@ export function CustomDomainSettings({
   const [isSaving, setIsSaving] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [verifyStatus, setVerifyStatus] = useState<'idle' | 'verified' | 'propagating'>('idle');
+  const [showConfirmRemove, setShowConfirmRemove] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -104,8 +105,12 @@ export function CustomDomainSettings({
     }
   };
 
-  const handleRemove = async () => {
-    if (!confirm('¿Estás seguro de que deseas desvincular este dominio personalizado?')) return;
+  const handleRemove = () => {
+    setShowConfirmRemove(true);
+  };
+
+  const handleConfirmRemove = async () => {
+    setShowConfirmRemove(false);
     try {
       setIsSaving(true);
       await onRemoveDomain();

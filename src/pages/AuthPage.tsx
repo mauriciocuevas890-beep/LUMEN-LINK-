@@ -135,14 +135,19 @@ export function AuthPage() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 selection:bg-sky-500 selection:text-white">
       {/* Brand logo link */}
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center mb-6">
-        <Link to="/" className="inline-flex items-center gap-2.5 font-bold text-2xl tracking-tight text-white mb-2">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <span>Lumen<span className="text-sky-400">.Link</span></span>
+        <Link to="/" className="inline-flex items-center gap-2.5 font-bold text-2xl tracking-tight text-white mb-2 group">
+          <img
+            src="/logo.png"
+            alt="LumenBase Logo"
+            className="w-10 h-10 rounded-xl object-contain bg-slate-900 border border-slate-800 p-0.5 shadow-md shadow-sky-500/10 group-hover:scale-105 transition-transform"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = 'https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png';
+            }}
+          />
+          <span>LumenBase<span className="text-sky-400"> NFC</span></span>
         </Link>
         <h2 className="text-xl font-bold text-slate-200">
-          {mode === 'signup' ? 'Crear cuenta en Lumen.Link' : 'Bienvenido a tu panel'}
+          {mode === 'signup' ? 'Crear cuenta en LumenBase NFC' : 'Bienvenido a tu panel'}
         </h2>
         <p className="text-xs text-slate-400 mt-1">
           {mode === 'signup'

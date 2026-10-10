@@ -238,6 +238,7 @@ export function XTwitterIcon({ className = 'w-5 h-5', size }: BrandIconProps) {
     </svg>
   );
 }
+export const TwitterXIcon = XTwitterIcon;
 
 // 10. Telegram Official Icon
 export function TelegramIcon({ className = 'w-5 h-5', size }: BrandIconProps) {
