@@ -46,6 +46,7 @@ import { LinkPreset } from '../utils/linkPresets';
 import { VideoEmbedSettings } from '../components/VideoEmbedSettings';
 import { ClientProfile, UserProfile, LinkItem, ThemePreferences, VCardDetails, ProfileModulesConfig } from '../types';
 import { ProfileView } from '../components/ProfileView';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 import { QRCodeGeneratorModal } from '../components/QRCodeModal';
 import { ImageDropzone } from '../components/ImageDropzone';
 import { BackgroundPresetsGallery } from '../components/BackgroundPresetsGallery';
@@ -896,6 +897,8 @@ export function ClientPortalPage() {
             >
               <ExternalLink className="w-4 h-4" />
             </Link>
+
+            <PWAInstallButton />
 
             {currentUser && (
               <button

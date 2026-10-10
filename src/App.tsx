@@ -7,6 +7,8 @@ import { OnboardingPage } from './pages/OnboardingPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ClientPortalPage } from './pages/ClientPortalPage';
 import { PublicProfilePage } from './pages/PublicProfilePage';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { OfflineIndicator } from './components/OfflineIndicator';
 
 export default function App() {
   return (
@@ -51,6 +53,10 @@ export default function App() {
           {/* Catch-all redirect */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+
+        {/* Global PWA install banner & offline indicator */}
+        <PWAInstallBanner />
+        <OfflineIndicator />
       </BrowserRouter>
     </AuthProvider>
   );

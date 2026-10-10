@@ -55,6 +55,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLinks } from '../hooks/useLinks';
 import { useClients } from '../hooks/useClients';
 import { ProfileView } from '../components/ProfileView';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 import { QRCodeCard } from '../components/QRCodeCard';
 import { QRCodeGeneratorModal } from '../components/QRCodeModal';
 import { ImageDropzone } from '../components/ImageDropzone';
@@ -819,6 +820,9 @@ export function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* PWA Install Button */}
+            <PWAInstallButton />
+
             {/* Mobile View Toggle */}
             <button
               id="dash-mobile-preview-toggle-btn"

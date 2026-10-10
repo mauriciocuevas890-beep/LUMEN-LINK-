@@ -6,6 +6,7 @@ import { UserProfile, LinkItem, ClientProfile } from '../types';
 import { ProfileView } from '../components/ProfileView';
 import { ProfileSkeleton } from '../components/ProfileSkeleton';
 import { PullToRefresh } from '../components/PullToRefresh';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 import { useAuth } from '../context/AuthContext';
 import { Sparkles, Compass, ArrowLeft, Home } from 'lucide-react';
 
@@ -376,6 +377,11 @@ export function PublicProfilePage() {
           </button>
         </div>
       )}
+
+      {/* PWA Install Button on top right */}
+      <div className="fixed top-3 right-3 z-50">
+        <PWAInstallButton />
+      </div>
 
       <ProfileView profile={profile} links={links} isPreview={false} />
     </PullToRefresh>

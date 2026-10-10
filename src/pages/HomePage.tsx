@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ProfileView } from '../components/ProfileView';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 import { UserProfile, LinkItem } from '../types';
 
 export function HomePage() {
@@ -141,6 +142,7 @@ export function HomePage() {
           </Link>
 
           <div className="flex items-center gap-3">
+            <PWAInstallButton />
             {currentUser ? (
               <Link
                 id="header-dashboard-link"
