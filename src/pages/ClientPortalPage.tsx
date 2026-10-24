@@ -112,6 +112,9 @@ export function ClientPortalPage() {
   const [theme, setTheme] = useState<ThemePreferences>(THEME_PRESETS[0].theme);
   const [modules, setModules] = useState<ProfileModulesConfig | undefined>(undefined);
   const [vcard, setVcard] = useState<VCardDetails>({
+    enabled: true,
+    showQuickCall: true,
+    showQrButton: true,
     fullName: '',
     company: '',
     jobTitle: '',
@@ -402,12 +405,22 @@ export function ClientPortalPage() {
         setTheme(resolvedClientData.theme_preferences || THEME_PRESETS[0].theme);
         setModules(resolvedClientData.modules);
         setVcard(
-          resolvedClientData.vcard_details || {
-            fullName: resolvedClientData.displayName || resolvedClientData.clientName,
-            company: resolvedClientData.clientName,
-            phone: '',
-            email: '',
-          }
+          resolvedClientData.vcard_details
+            ? {
+                enabled: resolvedClientData.vcard_details.enabled !== false,
+                showQuickCall: resolvedClientData.vcard_details.showQuickCall !== false,
+                showQrButton: resolvedClientData.vcard_details.showQrButton !== false,
+                ...resolvedClientData.vcard_details,
+              }
+            : {
+                enabled: true,
+                showQuickCall: true,
+                showQrButton: true,
+                fullName: resolvedClientData.displayName || resolvedClientData.clientName,
+                company: resolvedClientData.clientName,
+                phone: '',
+                email: '',
+              }
         );
 
         // Fetch links for this profile in isolated try-catch
@@ -538,6 +551,70 @@ export function ClientPortalPage() {
       setTimeout(() => setSaveError(null), 5000);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Instant auto-save for vCard enabled switch in Portal
+  const handleTogglePortalVCardEnabled = async () => {
+    if (!profileData) return;
+    const newEnabled = vcard.enabled === false ? true : false;
+    const updated: VCardDetails = { ...vcard, enabled: newEnabled };
+    setVcard(updated);
+
+    try {
+      const docRef = doc(db, sourceCollection, profileData.id);
+      await setDoc(
+        docRef,
+        cleanFirestoreData({
+          vcard_details: updated,
+          updatedAt: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } catch (err) {
+      console.error('Error auto-saving portal vcard toggle:', err);
+    }
+  };
+
+  const handleTogglePortalQuickCall = async (val: boolean) => {
+    if (!profileData) return;
+    const updated: VCardDetails = { ...vcard, showQuickCall: val };
+    setVcard(updated);
+
+    try {
+      const docRef = doc(db, sourceCollection, profileData.id);
+      await setDoc(
+        docRef,
+        cleanFirestoreData({
+          vcard_details: updated,
+          updatedAt: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
+    } catch (err) {
+      console.error('Error auto-saving quick call in portal:', err);
+    }
+  };
+
+  const handleTogglePortalQrButton = async (val: boolean) => {
+    if (!profileData) return;
+    const updated: VCardDetails = { ...vcard, showQrButton: val };
+    setVcard(updated);
+
+    try {
+      const docRef = doc(db, sourceCollection, profileData.id);
+      await setDoc(
+        docRef,
+        cleanFirestoreData({
+          vcard_details: updated,
+          updatedAt: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
+    } catch (err) {
+      console.error('Error auto-saving QR button in portal:', err);
     }
   };
 
@@ -985,10 +1062,28 @@ export function ClientPortalPage() {
               {/* Left: Contact Info & Details Summary */}
               <div className="w-full lg:w-1/2 space-y-4">
                 <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-6 space-y-5">
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <Contact className="w-5 h-5 text-sky-400" />
-                    <span>Ficha de Contacto para Teléfonos (vCard)</span>
-                  </h3>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <h3 className="text-base font-bold text-white flex items-center gap-2">
+                      <Contact className="w-5 h-5 text-sky-400" />
+                      <span>Ficha de Contacto para Teléfonos (vCard)</span>
+                    </h3>
+                    <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                      vcard.enabled !== false
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    }`}>
+                      {vcard.enabled !== false ? 'Botón Guardar Contacto Activado' : 'Oculto (Modo Negocio / Menú)'}
+                    </span>
+                  </div>
+
+                  {vcard.enabled === false && (
+                    <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-start gap-2.5">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                      <span>
+                        <strong>Modo Solo Contenido:</strong> El botón "Guardar Contacto" está oculto para tus clientes. Solo verán tu menú, enlaces y redes sociales para evitar confusiones.
+                      </span>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
                     <div className="p-3.5 rounded-2xl bg-slate-800/50 border border-slate-800">
@@ -1449,6 +1544,89 @@ export function ClientPortalPage() {
                     </span>
                   </div>
 
+                  {/* Master switch: Habilitar botón "Guardar Contacto" */}
+                  <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 ${vcard.enabled !== false ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>
+                          <Download className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-bold text-white">Botón "Guardar Contacto en el Teléfono"</p>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              vcard.enabled !== false
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                            }`}>
+                              {vcard.enabled !== false ? 'Activado / Visible' : 'Desactivado (Modo Negocio / Menú)'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                            {vcard.enabled !== false
+                              ? 'Los clientes verán el botón para descargar tu ficha de contacto (.vcf) e importarla en su agenda.'
+                              : 'Oculto en tu tarjeta digital pública. Ideal para restaurantes, menús, tiendas, catálogos o negocios donde solo quieres que los clientes vean tus enlaces y redes sin confusiones.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        id="portal-toggle-vcard-enabled-btn"
+                        type="button"
+                        role="switch"
+                        aria-checked={vcard.enabled !== false}
+                        onClick={handleTogglePortalVCardEnabled}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          vcard.enabled !== false ? 'bg-sky-500' : 'bg-slate-700'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                            vcard.enabled !== false ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Aux switches: Quick Call & QR */}
+                    <div className="pt-3 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <label className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 cursor-pointer hover:bg-slate-900 transition-colors">
+                        <div className="flex items-center gap-2">
+                          <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-slate-300 font-medium">Botones Llamar / WhatsApp</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={vcard.showQuickCall !== false}
+                          onChange={(e) => handleTogglePortalQuickCall(e.target.checked)}
+                          className="w-4 h-4 rounded text-sky-500 focus:ring-sky-500 bg-slate-950 border-slate-700 cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 cursor-pointer hover:bg-slate-900 transition-colors">
+                        <div className="flex items-center gap-2">
+                          <QrCode className="w-3.5 h-3.5 text-sky-400" />
+                          <span className="text-slate-300 font-medium">Botón Código QR en tarjeta</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={vcard.showQrButton !== false}
+                          onChange={(e) => handleTogglePortalQrButton(e.target.checked)}
+                          className="w-4 h-4 rounded text-sky-500 focus:ring-sky-500 bg-slate-950 border-slate-700 cursor-pointer"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {vcard.enabled === false && (
+                    <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-start gap-2.5">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                      <span>
+                        <strong>Modo Solo Contenido Activo:</strong> El botón de guardar contacto está oculto de tu tarjeta pública. Tus visitantes verán directamente tu menú, redes y enlaces.
+                      </span>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold text-slate-300 mb-1.5">
@@ -1873,6 +2051,32 @@ export function ClientPortalPage() {
                 >
                   <QrCode className="w-3.5 h-3.5" />
                   QR
+                </button>
+              </div>
+
+              {/* Quick Master Switch: Botón Guardar Contacto */}
+              <div className="w-full mb-3 p-2.5 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2 shadow-inner">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Contact className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span>Botón Contacto:</span>
+                  </p>
+                  <p className="text-[10px] text-slate-400 truncate">
+                    {vcard.enabled !== false ? 'Descarga de contacto visible' : 'Oculto (Solo menú y redes)'}
+                  </p>
+                </div>
+                <button
+                  id="portal-simulator-quick-toggle-btn"
+                  type="button"
+                  onClick={handleTogglePortalVCardEnabled}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                    vcard.enabled !== false
+                      ? 'bg-sky-500 hover:bg-sky-400 text-white shadow-sky-500/20'
+                      : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                  }`}
+                  title="Haz clic para activar o desactivar el botón de contacto en la tarjeta digital"
+                >
+                  <span>{vcard.enabled !== false ? 'Visible' : 'Oculto'}</span>
                 </button>
               </div>
 

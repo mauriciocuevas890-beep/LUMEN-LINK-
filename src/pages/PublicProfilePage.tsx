@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { UserProfile, LinkItem, ClientProfile } from '../types';
 import { ProfileView } from '../components/ProfileView';
@@ -21,6 +21,9 @@ export function PublicProfilePage() {
   const [notFound, setNotFound] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  const unsubProfileRef = useRef<Unsubscribe | null>(null);
+  const unsubLinksRef = useRef<Unsubscribe | null>(null);
+
   // Target handle from path param or query params (?u=..., ?username=..., ?p=..., ?profile=...)
   const targetUsername =
     username ||
@@ -30,6 +33,17 @@ export function PublicProfilePage() {
     searchParams.get('profile') ||
     searchParams.get('client');
 
+  const cleanupListeners = useCallback(() => {
+    if (unsubProfileRef.current) {
+      unsubProfileRef.current();
+      unsubProfileRef.current = null;
+    }
+    if (unsubLinksRef.current) {
+      unsubLinksRef.current();
+      unsubLinksRef.current = null;
+    }
+  }, []);
+
   const loadPublicData = useCallback(
     async (isRefresh = false) => {
       if (!targetUsername) {
@@ -37,6 +51,8 @@ export function PublicProfilePage() {
         setLoading(false);
         return;
       }
+
+      cleanupListeners();
 
       // Decode URL components safely (e.g. handle %20, accents, or @ handle)
       let decoded = '';
@@ -72,39 +88,86 @@ export function PublicProfilePage() {
         let userUid: string | null = null;
         let profileId: string | null = null;
         let loadedProfile: UserProfile | null = null;
+        let docSource: 'profiles' | 'users' | null = null;
 
-        // Step 1: Query 'users' collection using where('username', '==', username)
+        // Step 0: Fast direct document lookup by document ID in 'profiles'
         try {
-          const usersRef = collection(db, 'users');
-          const userQuery = query(usersRef, where('username', '==', cleanUsername));
-          const userSnap = await getDocs(userQuery);
-
-          if (!userSnap.empty) {
-            const docSnap = userSnap.docs[0];
-            const uData = docSnap.data() as UserProfile;
-            userUid = uData.uid || docSnap.id;
+          const directProfileDoc = await getDoc(doc(db, 'profiles', cleanUsername));
+          if (directProfileDoc.exists()) {
+            const clientData = directProfileDoc.data() as ClientProfile;
+            profileId = directProfileDoc.id;
+            userUid = clientData.ownerUid || 'client';
+            docSource = 'profiles';
             loadedProfile = {
-              ...uData,
               uid: userUid,
-              username: uData.username || cleanUsername,
+              username: clientData.username || cleanUsername,
+              email: '',
+              displayName: clientData.displayName || clientData.clientName,
+              bio: clientData.bio,
+              avatarUrl: clientData.avatarUrl,
+              theme_preferences: clientData.theme_preferences,
+              vcard_details: clientData.vcard_details,
+              modules: clientData.modules,
             };
-          } else if (rawId !== cleanUsername) {
-            // Check original casing if different
-            const rawUserQuery = query(usersRef, where('username', '==', rawId));
-            const rawUserSnap = await getDocs(rawUserQuery);
-            if (!rawUserSnap.empty) {
-              const docSnap = rawUserSnap.docs[0];
-              const uData = docSnap.data() as UserProfile;
-              userUid = uData.uid || docSnap.id;
+          }
+        } catch (e) {
+          console.warn('Direct profile doc lookup err:', e);
+        }
+
+        // Step 0b: Fast direct document lookup by document ID in 'users'
+        if (!loadedProfile) {
+          try {
+            const directUserDoc = await getDoc(doc(db, 'users', cleanUsername));
+            if (directUserDoc.exists()) {
+              const uData = directUserDoc.data() as UserProfile;
+              userUid = uData.uid || directUserDoc.id;
+              docSource = 'users';
               loadedProfile = {
                 ...uData,
                 uid: userUid,
-                username: uData.username || rawId,
+                username: uData.username || cleanUsername,
               };
             }
+          } catch (e) {
+            console.warn('Direct user doc lookup err:', e);
           }
-        } catch (userQueryErr) {
-          console.warn('Error querying users by username:', userQueryErr);
+        }
+
+        // Step 1: Query 'users' collection using where('username', '==', username)
+        if (!loadedProfile) {
+          try {
+            const usersRef = collection(db, 'users');
+            const userQuery = query(usersRef, where('username', '==', cleanUsername));
+            const userSnap = await getDocs(userQuery);
+
+            if (!userSnap.empty) {
+              const docSnap = userSnap.docs[0];
+              const uData = docSnap.data() as UserProfile;
+              userUid = uData.uid || docSnap.id;
+              docSource = 'users';
+              loadedProfile = {
+                ...uData,
+                uid: userUid,
+                username: uData.username || cleanUsername,
+              };
+            } else if (rawId !== cleanUsername) {
+              const rawUserQuery = query(usersRef, where('username', '==', rawId));
+              const rawUserSnap = await getDocs(rawUserQuery);
+              if (!rawUserSnap.empty) {
+                const docSnap = rawUserSnap.docs[0];
+                const uData = docSnap.data() as UserProfile;
+                userUid = uData.uid || docSnap.id;
+                docSource = 'users';
+                loadedProfile = {
+                  ...uData,
+                  uid: userUid,
+                  username: uData.username || rawId,
+                };
+              }
+            }
+          } catch (userQueryErr) {
+            console.warn('Error querying users by username:', userQueryErr);
+          }
         }
 
         // Step 2: Query 'profiles' collection using where('username', '==', username)
@@ -119,6 +182,7 @@ export function PublicProfilePage() {
               const clientData = docSnap.data() as ClientProfile;
               profileId = docSnap.id;
               userUid = clientData.ownerUid || 'client';
+              docSource = 'profiles';
               loadedProfile = {
                 uid: userUid,
                 username: clientData.username || cleanUsername,
@@ -131,7 +195,6 @@ export function PublicProfilePage() {
                 modules: clientData.modules,
               };
             } else if (rawId !== cleanUsername) {
-              // Check original casing if different
               const rawProfileQuery = query(profilesRef, where('username', '==', rawId));
               const rawProfileSnap = await getDocs(rawProfileQuery);
               if (!rawProfileSnap.empty) {
@@ -139,6 +202,7 @@ export function PublicProfilePage() {
                 const clientData = docSnap.data() as ClientProfile;
                 profileId = docSnap.id;
                 userUid = clientData.ownerUid || 'client';
+                docSource = 'profiles';
                 loadedProfile = {
                   uid: userUid,
                   username: clientData.username || rawId,
@@ -176,6 +240,7 @@ export function PublicProfilePage() {
                   profileId = profileSnap.id;
                   const finalUid = clientData.ownerUid || targetUid || 'client';
                   userUid = finalUid;
+                  docSource = 'profiles';
                   loadedProfile = {
                     uid: finalUid,
                     username: clientData.username || cleanUsername,
@@ -197,6 +262,7 @@ export function PublicProfilePage() {
                   const uData = userSnap.data() as UserProfile;
                   const finalUid = uData.uid || targetUid;
                   userUid = finalUid;
+                  docSource = 'users';
                   loadedProfile = {
                     ...uData,
                     uid: finalUid,
@@ -228,6 +294,7 @@ export function PublicProfilePage() {
               ) {
                 profileId = docSnap.id;
                 userUid = d.ownerUid || 'client';
+                docSource = 'profiles';
                 loadedProfile = {
                   uid: userUid,
                   username: d.username || cleanUsername,
@@ -237,6 +304,7 @@ export function PublicProfilePage() {
                   avatarUrl: d.avatarUrl,
                   theme_preferences: d.theme_preferences,
                   vcard_details: d.vcard_details,
+                  modules: d.modules,
                 };
                 break;
               }
@@ -256,35 +324,77 @@ export function PublicProfilePage() {
         userUid = userUid || loadedProfile.uid || 'public';
         setProfile(loadedProfile);
 
-        // Step 5: Fetch links for the resolved profile
+        // Step 5: Real-time onSnapshot listener for the active profile document
         try {
-          const linksRef = collection(db, 'links');
-          const fetchedLinks: LinkItem[] = [];
-
-          if (profileId && profileId !== 'main') {
-            // Fetch links explicitly matching this client profile
-            const linksQuery = query(linksRef, where('profileId', '==', profileId));
-            const linksSnap = await getDocs(linksQuery);
-            linksSnap.forEach((d) => {
-              const data = d.data() as Omit<LinkItem, 'id'>;
-              fetchedLinks.push({ id: d.id, ...data });
+          if (docSource === 'profiles' && profileId) {
+            const profileDocRef = doc(db, 'profiles', profileId);
+            unsubProfileRef.current = onSnapshot(profileDocRef, (snap) => {
+              if (snap.exists()) {
+                const clientData = snap.data() as ClientProfile;
+                setProfile((prev) => ({
+                  uid: clientData.ownerUid || prev?.uid || 'client',
+                  username: clientData.username || prev?.username || cleanUsername,
+                  email: prev?.email || '',
+                  displayName: clientData.displayName || clientData.clientName || prev?.displayName || '',
+                  bio: clientData.bio,
+                  avatarUrl: clientData.avatarUrl,
+                  theme_preferences: clientData.theme_preferences,
+                  vcard_details: clientData.vcard_details,
+                  modules: clientData.modules,
+                }));
+                setLastUpdated(new Date());
+              }
             });
-          } else if (userUid && userUid !== 'client') {
-            // Fetch links for the main profile (profileId === 'main' or omitted)
-            const linksQuery = query(linksRef, where('uid', '==', userUid));
-            const linksSnap = await getDocs(linksQuery);
-            linksSnap.forEach((d) => {
-              const data = d.data() as Omit<LinkItem, 'id'>;
-              const linkProfileId = data.profileId || 'main';
-              if (linkProfileId === 'main') {
-                fetchedLinks.push({ id: d.id, ...data });
+          } else if (docSource === 'users' && userUid) {
+            const userDocRef = doc(db, 'users', userUid);
+            unsubProfileRef.current = onSnapshot(userDocRef, (snap) => {
+              if (snap.exists()) {
+                const uData = snap.data() as UserProfile;
+                setProfile((prev) => ({
+                  ...prev,
+                  ...uData,
+                  uid: uData.uid || snap.id,
+                  username: uData.username || prev?.username || cleanUsername,
+                }));
+                setLastUpdated(new Date());
               }
             });
           }
+        } catch (subErr) {
+          console.warn('Error setting up profile snapshot listener:', subErr);
+        }
 
-          // Sort by order ascending
-          fetchedLinks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-          setLinks(fetchedLinks);
+        // Step 6: Real-time onSnapshot listener for profile links
+        try {
+          const linksRef = collection(db, 'links');
+          let linksQuery;
+
+          if (profileId && profileId !== 'main') {
+            linksQuery = query(linksRef, where('profileId', '==', profileId));
+          } else if (userUid && userUid !== 'client') {
+            linksQuery = query(linksRef, where('uid', '==', userUid));
+          }
+
+          if (linksQuery) {
+            unsubLinksRef.current = onSnapshot(linksQuery, (snapshot) => {
+              const fetchedLinks: LinkItem[] = [];
+              snapshot.forEach((d) => {
+                const data = d.data() as Omit<LinkItem, 'id'>;
+                if (profileId && profileId !== 'main') {
+                  fetchedLinks.push({ id: d.id, ...data });
+                } else {
+                  const linkProfileId = data.profileId || 'main';
+                  if (linkProfileId === 'main') {
+                    fetchedLinks.push({ id: d.id, ...data });
+                  }
+                }
+              });
+
+              fetchedLinks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+              setLinks(fetchedLinks);
+              setLastUpdated(new Date());
+            });
+          }
         } catch (linkErr) {
           console.warn('Error fetching profile links (profile still displayed):', linkErr);
         }
@@ -301,12 +411,15 @@ export function PublicProfilePage() {
         }
       }
     },
-    [targetUsername, navigate]
+    [targetUsername, navigate, cleanupListeners]
   );
 
   useEffect(() => {
     loadPublicData(false);
-  }, [loadPublicData]);
+    return () => {
+      cleanupListeners();
+    };
+  }, [loadPublicData, cleanupListeners]);
 
   // Pull-to-refresh callback triggered by user gesture
   const handlePullToRefresh = async () => {

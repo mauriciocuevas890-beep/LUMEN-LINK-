@@ -15,6 +15,7 @@ import {
   Layers,
   Palette,
   Contact,
+  Download,
   Smartphone,
   Save,
   CheckCircle2,
@@ -179,17 +180,21 @@ export function DashboardPage() {
   const [avatarUrl, setAvatarUrl] = useState(activeClient ? (activeClient.avatarUrl || '') : (profile?.avatarUrl || ''));
 
   // Editable vCard state
-  const [vcardForm, setVcardForm] = useState<VCardDetails>(
-    activeClient?.vcard_details || profile?.vcard_details || {
-      fullName: '',
-      email: '',
-      phone: '',
-      jobTitle: '',
-      company: '',
-      website: '',
-      note: '',
-    }
-  );
+  const [vcardForm, setVcardForm] = useState<VCardDetails>(() => {
+    const initialVcard = activeClient?.vcard_details || profile?.vcard_details;
+    return {
+      enabled: initialVcard?.enabled !== false,
+      showQuickCall: initialVcard?.showQuickCall !== false,
+      showQrButton: initialVcard?.showQrButton !== false,
+      fullName: initialVcard?.fullName || '',
+      email: initialVcard?.email || '',
+      phone: initialVcard?.phone || '',
+      jobTitle: initialVcard?.jobTitle || '',
+      company: initialVcard?.company || '',
+      website: initialVcard?.website || '',
+      note: initialVcard?.note || '',
+    };
+  });
 
   // Editable VideoEmbed module state (YouTube, Twitch, Vimeo al final de la tarjeta)
   const [localVideoEmbed, setLocalVideoEmbed] = useState<VideoEmbedModule>(
@@ -218,7 +223,14 @@ export function DashboardPage() {
           setDisplayName(profile.displayName || '');
           setBio(profile.bio || '');
           setAvatarUrl(profile.avatarUrl || '');
-          if (profile.vcard_details) setVcardForm(profile.vcard_details);
+          if (profile.vcard_details) {
+            setVcardForm({
+              enabled: profile.vcard_details.enabled !== false,
+              showQuickCall: profile.vcard_details.showQuickCall !== false,
+              showQrButton: profile.vcard_details.showQrButton !== false,
+              ...profile.vcard_details,
+            });
+          }
           setLocalVideoEmbed(
             profile.modules?.videoEmbed || {
               enabled: false,
@@ -233,7 +245,14 @@ export function DashboardPage() {
         setDisplayName(activeClient.displayName || activeClient.clientName || '');
         setBio(activeClient.bio || '');
         setAvatarUrl(activeClient.avatarUrl || '');
-        if (activeClient.vcard_details) setVcardForm(activeClient.vcard_details);
+        if (activeClient.vcard_details) {
+          setVcardForm({
+            enabled: activeClient.vcard_details.enabled !== false,
+            showQuickCall: activeClient.vcard_details.showQuickCall !== false,
+            showQrButton: activeClient.vcard_details.showQrButton !== false,
+            ...activeClient.vcard_details,
+          });
+        }
         setLocalVideoEmbed(
           activeClient.modules?.videoEmbed || {
             enabled: false,
@@ -455,6 +474,63 @@ export function DashboardPage() {
       setTimeout(() => setSaveErrorMsg(null), 4500);
     } finally {
       setIsSavingVCard(false);
+    }
+  };
+
+  // Toggle and immediately auto-save vcard enabled state
+  const handleToggleVCardEnabled = async () => {
+    const newEnabled = vcardForm.enabled === false;
+    const updated = { ...vcardForm, enabled: newEnabled };
+    setVcardForm(updated);
+
+    try {
+      if (activeClientId === 'main') {
+        await updateVCard(updated);
+      } else if (activeClient) {
+        await updateClient(activeClient.id, {
+          vcard_details: updated,
+        });
+      }
+      setSaveSuccessMsg(
+        newEnabled
+          ? '¡Botón "Guardar Contacto" activado y guardado!'
+          : '¡Modo Negocio / Menú activado! Botón de contacto oculto en la tarjeta real.'
+      );
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+    } catch (err) {
+      console.error('Error auto-saving vCard toggle:', err);
+    }
+  };
+
+  const handleToggleQuickCall = async (val: boolean) => {
+    const updated = { ...vcardForm, showQuickCall: val };
+    setVcardForm(updated);
+    try {
+      if (activeClientId === 'main') {
+        await updateVCard(updated);
+      } else if (activeClient) {
+        await updateClient(activeClient.id, { vcard_details: updated });
+      }
+      setSaveSuccessMsg('¡Preferencia de llamada actualizada!');
+      setTimeout(() => setSaveSuccessMsg(null), 2500);
+    } catch (err) {
+      console.error('Error auto-saving quick call:', err);
+    }
+  };
+
+  const handleToggleQrButton = async (val: boolean) => {
+    const updated = { ...vcardForm, showQrButton: val };
+    setVcardForm(updated);
+    try {
+      if (activeClientId === 'main') {
+        await updateVCard(updated);
+      } else if (activeClient) {
+        await updateClient(activeClient.id, { vcard_details: updated });
+      }
+      setSaveSuccessMsg('¡Botón QR actualizado!');
+      setTimeout(() => setSaveSuccessMsg(null), 2500);
+    } catch (err) {
+      console.error('Error auto-saving QR button toggle:', err);
     }
   };
 
@@ -1780,19 +1856,101 @@ export function DashboardPage() {
                   </button>
                 </div>
 
+                <div className="p-4 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2.5 rounded-xl shrink-0 mt-0.5 ${vcardForm.enabled !== false ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30' : 'bg-slate-800 text-slate-500 border border-slate-700'}`}>
+                        <Download className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-bold text-white">Botón "Guardar Contacto en el Teléfono"</p>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            vcardForm.enabled !== false
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          }`}>
+                            {vcardForm.enabled !== false ? 'Activado / Visible' : 'Desactivado (Modo Negocio / Menú)'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                          {vcardForm.enabled !== false
+                            ? 'Los visitantes verán el botón para descargar tu ficha de contacto (.vcf) e importarla en su agenda.'
+                            : 'Oculto en la tarjeta digital. Ideal para restaurantes, menús, tiendas, catálogos o negocios donde solo quieres que los clientes vean tus enlaces y redes sin confusiones.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      id="toggle-vcard-enabled-btn"
+                      type="button"
+                      role="switch"
+                      aria-checked={vcardForm.enabled !== false}
+                      onClick={handleToggleVCardEnabled}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        vcardForm.enabled !== false ? 'bg-sky-500' : 'bg-slate-700'
+                      }`}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                          vcardForm.enabled !== false ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {/* Opciones adicionales: Accesos rápidos y Código QR */}
+                  <div className="pt-3 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <label className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 cursor-pointer hover:bg-slate-900 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-slate-300 font-medium">Botones Llamar / WhatsApp</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={vcardForm.showQuickCall !== false}
+                        onChange={(e) => handleToggleQuickCall(e.target.checked)}
+                        className="w-4 h-4 rounded text-sky-500 focus:ring-sky-500 bg-slate-950 border-slate-700 cursor-pointer"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 cursor-pointer hover:bg-slate-900 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <QrCode className="w-3.5 h-3.5 text-sky-400" />
+                        <span className="text-slate-300 font-medium">Botón Código QR en tarjeta</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={vcardForm.showQrButton !== false}
+                        onChange={(e) => handleToggleQrButton(e.target.checked)}
+                        className="w-4 h-4 rounded text-sky-500 focus:ring-sky-500 bg-slate-950 border-slate-700 cursor-pointer"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {vcardForm.enabled === false && (
+                  <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                    <span>
+                      <strong>Modo Solo Contenido Activo:</strong> El botón de contacto ha sido ocultado de la tarjeta digital. Tus visitantes únicamente verán tus enlaces, redes sociales, menú y catálogos.
+                    </span>
+                  </div>
+                )}
+
                 <form onSubmit={handleSaveVCard} className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label htmlFor="vcard-fullname" className="block text-xs font-semibold text-slate-300 mb-1.5">
-                        Nombre Completo <span className="text-sky-400">*</span>
+                        Nombre Completo / Titular {vcardForm.enabled !== false && <span className="text-sky-400">*</span>}
                       </label>
                       <input
                         id="vcard-fullname"
                         type="text"
-                        required
+                        required={vcardForm.enabled !== false}
                         value={vcardForm.fullName || ''}
                         onChange={(e) => setVcardForm({ ...vcardForm, fullName: e.target.value })}
-                        placeholder="Ej. Dra. Sofía Martínez"
+                        placeholder="Ej. Dra. Sofía Martínez / Taquería El Pastor"
                         className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-sky-500"
                       />
                     </div>
@@ -2484,6 +2642,32 @@ export function DashboardPage() {
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 {activeClientId !== 'main' ? `Cliente: @${activeClient?.username}` : 'En Vivo'}
               </span>
+            </div>
+
+            {/* Quick Master Switch: Botón Guardar Contacto */}
+            <div className="w-full mb-3.5 p-2.5 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-between gap-2 shadow-inner">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Contact className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>Botón Contacto:</span>
+                </p>
+                <p className="text-[10px] text-slate-400 truncate">
+                  {vcardForm.enabled !== false ? 'Descarga de contacto visible' : 'Oculto (Solo menú y redes)'}
+                </p>
+              </div>
+              <button
+                id="simulator-quick-toggle-vcard-btn"
+                type="button"
+                onClick={handleToggleVCardEnabled}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                  vcardForm.enabled !== false
+                    ? 'bg-sky-500 hover:bg-sky-400 text-white shadow-sky-500/20'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30'
+                }`}
+                title="Haz clic para activar o desactivar el botón de contacto en la tarjeta digital"
+              >
+                <span>{vcardForm.enabled !== false ? 'Visible' : 'Oculto'}</span>
+              </button>
             </div>
 
             {/* Smartphone frame */}

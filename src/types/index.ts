@@ -19,6 +19,9 @@ export interface ThemePreferences {
 }
 
 export interface VCardDetails {
+  enabled?: boolean; // When false, hides the "Guardar Contacto" button from the digital card. Defaults to true if contact details exist.
+  showQuickCall?: boolean; // When false, hides the quick Llamar/WhatsApp direct buttons from the top bar. Defaults to true if phone exists.
+  showQrButton?: boolean; // When false, hides the QR code button on the card. Defaults to true.
   fullName: string;
   firstName?: string;
   lastName?: string;

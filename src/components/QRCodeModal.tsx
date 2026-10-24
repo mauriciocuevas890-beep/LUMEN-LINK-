@@ -430,7 +430,7 @@ export function QRCodeGeneratorModal({
                 <span>Descargar QR (PNG)</span>
               </button>
 
-              {profile.vcard_details?.phone || profile.vcard_details?.fullName ? (
+              {(profile.vcard_details?.phone || profile.vcard_details?.fullName) && profile.vcard_details?.enabled !== false ? (
                 <button
                   id="modal-qr-vcf-download-btn"
                   type="button"
@@ -898,16 +898,18 @@ export function QRCodeGeneratorModal({
                   <span>Descargar Tarjeta (PNG)</span>
                 </button>
 
-                <button
-                  id="modal-vcf-download-btn"
-                  type="button"
-                  onClick={handleDownloadVCF}
-                  className="py-3 px-4 rounded-2xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2"
-                  title="Descargar archivo estándar .vcf para importar el contacto en la agenda del teléfono"
-                >
-                  <Contact className="w-4 h-4" />
-                  <span>Guardar Contacto (.vcf)</span>
-                </button>
+                {profile.vcard_details?.enabled !== false && (
+                  <button
+                    id="modal-vcf-download-btn"
+                    type="button"
+                    onClick={handleDownloadVCF}
+                    className="py-3 px-4 rounded-2xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2"
+                    title="Descargar archivo estándar .vcf para importar el contacto en la agenda del teléfono"
+                  >
+                    <Contact className="w-4 h-4" />
+                    <span>Guardar Contacto (.vcf)</span>
+                  </button>
+                )}
 
                 <button
                   id="copy-card-image-btn"
@@ -950,16 +952,18 @@ export function QRCodeGeneratorModal({
                   <span>Vector (SVG)</span>
                 </button>
 
-                <button
-                  id="modal-qr-vcf-download-btn"
-                  type="button"
-                  onClick={handleDownloadVCF}
-                  className="py-3 px-4 rounded-2xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2"
-                  title="Descargar archivo estándar .vcf para la agenda"
-                >
-                  <Contact className="w-4 h-4" />
-                  <span>Guardar Contacto (.vcf)</span>
-                </button>
+                {profile.vcard_details?.enabled !== false && (
+                  <button
+                    id="modal-qr-vcf-download-btn"
+                    type="button"
+                    onClick={handleDownloadVCF}
+                    className="py-3 px-4 rounded-2xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2"
+                    title="Descargar archivo estándar .vcf para la agenda"
+                  >
+                    <Contact className="w-4 h-4" />
+                    <span>Guardar Contacto (.vcf)</span>
+                  </button>
+                )}
               </>
             )}
           </div>

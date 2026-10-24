@@ -114,7 +114,7 @@ export function VideoEmbedSettings({
                 type="url"
                 value={config.videoUrl || ''}
                 onChange={(e) => handleUrlChange(e.target.value)}
-                placeholder="https://www.youtube.com/watch?v=... o https://www.twitch.tv/..."
+                placeholder="https://www.instagram.com/reel/... o https://www.facebook.com/watch/?v=..."
                 className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700/80 rounded-xl text-white text-xs placeholder:text-slate-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 pr-24"
               />
               <div className="absolute right-2 top-2 flex items-center gap-1">
@@ -129,8 +129,8 @@ export function VideoEmbedSettings({
                 ) : null}
               </div>
             </div>
-            <p className="text-[11px] text-slate-500">
-              Formatos soportados: YouTube (videos normales, Shorts, YouTube Live), Twitch (canales o videos) y Vimeo.
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Formatos soportados: <strong>Instagram</strong> (Reels y Posts), <strong>Facebook</strong> (Videos y Watch), <strong>YouTube</strong> (videos, Shorts y Live), <strong>Loom</strong>, <strong>TikTok</strong>, <strong>Vimeo</strong>, <strong>Twitch</strong> y <strong>Videos directos .mp4</strong>.
             </p>
           </div>
 
@@ -171,16 +171,7 @@ export function VideoEmbedSettings({
 
           {/* Quick preset buttons */}
           <div className="pt-1 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-[11px] text-slate-500">Probar con enlace demo:</span>
-            <button
-              type="button"
-              onClick={() =>
-                handleUrlChange('https://www.youtube.com/watch?v=jfKfPfyJRdk')
-              }
-              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 font-medium transition-all"
-            >
-              Demo YouTube Live
-            </button>
+            <span className="text-[11px] text-slate-500">Probar ejemplos:</span>
             <button
               type="button"
               onClick={() =>
@@ -188,7 +179,43 @@ export function VideoEmbedSettings({
               }
               className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 font-medium transition-all"
             >
-              Demo Video Normal
+              YouTube
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                handleUrlChange('https://www.instagram.com/reel/C8qL_XDu93u/')
+              }
+              className="px-2.5 py-1 rounded-lg bg-pink-950/50 hover:bg-pink-900/50 text-[11px] text-pink-300 border border-pink-800/50 font-medium transition-all"
+            >
+              Instagram Reel
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                handleUrlChange('https://www.facebook.com/watch/?v=10153231379946729')
+              }
+              className="px-2.5 py-1 rounded-lg bg-blue-950/50 hover:bg-blue-900/50 text-[11px] text-blue-300 border border-blue-800/50 font-medium transition-all"
+            >
+              Facebook Video
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                handleUrlChange('https://vimeo.com/76979871')
+              }
+              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 font-medium transition-all"
+            >
+              Vimeo
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                handleUrlChange('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4')
+              }
+              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 font-medium transition-all"
+            >
+              Video .MP4
             </button>
           </div>
 
@@ -198,7 +225,7 @@ export function VideoEmbedSettings({
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-400 font-semibold flex items-center gap-1.5">
                   <Play className="w-3.5 h-3.5 text-red-400" />
-                  <span>Vista previa de reproducción</span>
+                  <span>Vista previa de reproducción ({parsed.platform})</span>
                 </span>
                 {config.isLive && (
                   <span className="px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-black uppercase tracking-wider animate-pulse">
@@ -206,15 +233,45 @@ export function VideoEmbedSettings({
                   </span>
                 )}
               </div>
-              <div className="w-full aspect-video rounded-lg overflow-hidden bg-black border border-slate-800">
-                <iframe
-                  src={parsed.embedUrl}
-                  title="Vista Previa de Video"
-                  className="w-full h-full border-0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowFullScreen
-                />
+              <div
+                className={`w-full ${
+                  parsed.isVertical ? 'aspect-[9/16] max-w-[240px] mx-auto' : 'aspect-video'
+                } rounded-lg overflow-hidden bg-black border border-slate-800`}
+              >
+                {parsed.isDirectVideo ? (
+                  <video
+                    src={parsed.embedUrl}
+                    controls
+                    playsInline
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <iframe
+                    src={parsed.embedUrl}
+                    title="Vista Previa de Video"
+                    className="w-full h-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                )}
               </div>
+
+              {parsed.platform === 'instagram' && (
+                <div className="p-3 bg-pink-950/30 border border-pink-800/40 rounded-lg text-xs space-y-1.5 text-pink-200">
+                  <div className="flex items-center gap-1.5 font-bold text-pink-300">
+                    <Sparkles className="w-3.5 h-3.5 text-pink-400" />
+                    <span>¿Instagram muestra "The link may be broken"?</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-pink-200/90">
+                    Instagram protege la privacidad de sus creadores. Para que un Reel se reproduzca directamente dentro de otra web:
+                  </p>
+                  <ul className="list-disc pl-4 space-y-0.5 text-[10px] text-pink-200/80">
+                    <li>La cuenta de Instagram debe ser <strong>Pública</strong> (las cuentas privadas impiden la incrustación).</li>
+                    <li>En la app de Instagram ve a: <em>Configuración ➔ Compartir y reutilizar ➔ <strong>"Permitir que las personas incrusten tus publicaciones o reels"</strong></em> y asegúrate de que esté <strong>Activado</strong>.</li>
+                    <li>Reels con música comercial protegida por derechos de autor pueden ser bloqueados por Meta para reproductores externos. Tus visitantes siempre tendrán el botón para abrirlo directamente en Instagram.</li>
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </div>

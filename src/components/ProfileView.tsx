@@ -103,12 +103,16 @@ export function ProfileView({
   };
 
   const vcard = profile.vcard_details;
+  const isVCardEnabled = vcard?.enabled !== false;
   const rawPhone = vcard?.phone?.trim() || '';
   const cleanPhoneDigits = rawPhone.replace(/[^\d+]/g, '');
-  const hasPhone = Boolean(rawPhone);
+  // Only show quick phone/WhatsApp bar if contact section is enabled
+  const hasPhone = Boolean(rawPhone) && isVCardEnabled && (vcard?.showQuickCall !== false);
   const hasVCard = Boolean(
-    vcard && (vcard.fullName?.trim() || vcard.phone?.trim() || vcard.email?.trim() || vcard.company?.trim())
+    isVCardEnabled && vcard && (vcard.fullName?.trim() || vcard.phone?.trim() || vcard.email?.trim() || vcard.company?.trim())
   );
+  // Only show QR button if contact section is enabled
+  const showQrButton = isVCardEnabled && (vcard?.showQrButton !== false);
 
   // Group links
   const activeLinks = links.filter((l) => l.isActive);
@@ -564,25 +568,27 @@ export function ProfileView({
               )}
             </motion.button>
 
-            <motion.button
-              id="view-qr-button"
-              type="button"
-              onClick={() => setShowQRModal(true)}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.96 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-              className={`w-full mt-2.5 py-2.5 px-4 font-semibold text-xs flex items-center justify-center gap-2 border backdrop-blur-md hover:opacity-90 select-none ${getButtonRadiusClass(
-                theme.buttonStyle
-              )}`}
-              style={{
-                borderColor: theme.cardBorderColor || 'rgba(255,255,255,0.2)',
-                color: theme.cardTextColor,
-                backgroundColor: 'rgba(255,255,255,0.08)',
-              }}
-            >
-              <QrCode className="w-4 h-4" />
-              <span>Ver Código QR de Tarjeta Digital</span>
-            </motion.button>
+            {showQrButton && (
+              <motion.button
+                id="view-qr-button"
+                type="button"
+                onClick={() => setShowQRModal(true)}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.96 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                className={`w-full mt-2.5 py-2.5 px-4 font-semibold text-xs flex items-center justify-center gap-2 border backdrop-blur-md hover:opacity-90 select-none ${getButtonRadiusClass(
+                  theme.buttonStyle
+                )}`}
+                style={{
+                  borderColor: theme.cardBorderColor || 'rgba(255,255,255,0.2)',
+                  color: theme.cardTextColor,
+                  backgroundColor: 'rgba(255,255,255,0.08)',
+                }}
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Ver Código QR de Tarjeta Digital</span>
+              </motion.button>
+            )}
 
             <p
               className="text-[11px] mt-1.5 opacity-60"
@@ -593,8 +599,8 @@ export function ProfileView({
           </div>
         )}
 
-        {/* Stand-alone QR button if no vCard configured */}
-        {!hasVCard && (
+        {/* Stand-alone QR button ONLY if vCard/contact is enabled but text fields are empty */}
+        {!hasVCard && isVCardEnabled && showQrButton && (
           <div className="w-full mb-6">
             <motion.button
               id="view-qr-button-stand-alone"
@@ -798,32 +804,82 @@ export function ProfileView({
                       </span>
                     </div>
 
-                    {parsed.platform && (
-                      <span
-                        className="text-[10px] font-semibold opacity-60 uppercase tracking-wider"
-                        style={{ color: theme.cardTextColor }}
-                      >
-                        {parsed.platform}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {parsed.platform && (
+                        <span
+                          className="text-[10px] font-semibold opacity-60 uppercase tracking-wider"
+                          style={{ color: theme.cardTextColor }}
+                        >
+                          {parsed.platform}
+                        </span>
+                      )}
+                      {(parsed.platform === 'instagram' || parsed.platform === 'facebook') && (
+                        <a
+                          href={parsed.originalUrl || videoConfig.videoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] font-semibold opacity-85 hover:opacity-100 flex items-center gap-1 transition-opacity"
+                          style={{ color: theme.accentColor || '#38bdf8' }}
+                          title={`Abrir en ${parsed.platform === 'instagram' ? 'Instagram' : 'Facebook'}`}
+                        >
+                          <span>Ver en {parsed.platform === 'instagram' ? 'Instagram' : 'Facebook'}</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Reproductor responsivo 16:9 sin consumir almacenamiento */}
+                  {/* Reproductor responsivo (Instagram, vertical 9:16 o 16:9 estándar) */}
                   <div
-                    className="w-full aspect-video rounded-2xl overflow-hidden shadow-lg border relative bg-black/40 backdrop-blur-xs"
+                    className={`w-full ${
+                      parsed.platform === 'instagram'
+                        ? 'min-h-[460px] max-w-[340px] mx-auto'
+                        : parsed.isVertical
+                        ? 'aspect-[9/16] max-w-[300px] mx-auto'
+                        : 'aspect-video'
+                    } rounded-2xl overflow-hidden shadow-lg border relative bg-black/40 backdrop-blur-xs`}
                     style={{
                       borderColor: theme.cardBorderColor || 'rgba(255,255,255,0.15)',
                     }}
                   >
-                    <iframe
-                      src={parsed.embedUrl}
-                      title={videoConfig.title || 'Video'}
-                      className="w-full h-full border-0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      allowFullScreen
-                      loading="lazy"
-                    />
+                    {parsed.isDirectVideo ? (
+                      <video
+                        src={parsed.embedUrl!}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="w-full h-full object-contain bg-black"
+                      />
+                    ) : (
+                      <iframe
+                        src={parsed.embedUrl!}
+                        title={videoConfig.title || 'Video'}
+                        className="w-full h-full border-0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                        loading="lazy"
+                      />
+                    )}
                   </div>
+
+                  {parsed.platform === 'instagram' && (
+                    <div
+                      className="flex items-center justify-between px-1 text-[11px] opacity-75"
+                      style={{ color: theme.cardTextColor }}
+                    >
+                      <span>¿Problemas para reproducir?</span>
+                      <a
+                        href={parsed.originalUrl || videoConfig.videoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-bold underline hover:opacity-100 flex items-center gap-1"
+                        style={{ color: theme.accentColor || '#38bdf8' }}
+                      >
+                        <span>Abrir Reel en Instagram</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  )}
                 </div>
               );
             })()}
