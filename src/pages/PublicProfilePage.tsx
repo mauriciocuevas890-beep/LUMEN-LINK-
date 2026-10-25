@@ -1,28 +1,24 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { UserProfile, LinkItem, ClientProfile } from '../types';
 import { ProfileView } from '../components/ProfileView';
 import { ProfileSkeleton } from '../components/ProfileSkeleton';
 import { PullToRefresh } from '../components/PullToRefresh';
-import { PWAInstallButton } from '../components/PWAInstallButton';
-import { useAuth } from '../context/AuthContext';
-import { Sparkles, Compass, ArrowLeft, Home } from 'lucide-react';
+import { Compass } from 'lucide-react';
+import {
+  sanitizeUsername,
+  getCachedProfileSync,
+  createOptimisticProfile,
+  persistProfileCache,
+  prefetchProfileData,
+} from '../utils/profilePrefetch';
 
 export function PublicProfilePage() {
   const { username } = useParams<{ username: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [links, setLinks] = useState<LinkItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-
-  const unsubProfileRef = useRef<Unsubscribe | null>(null);
-  const unsubLinksRef = useRef<Unsubscribe | null>(null);
 
   // Target handle from path param or query params (?u=..., ?username=..., ?p=..., ?profile=...)
   const targetUsername =
@@ -31,7 +27,39 @@ export function PublicProfilePage() {
     searchParams.get('username') ||
     searchParams.get('p') ||
     searchParams.get('profile') ||
-    searchParams.get('client');
+    searchParams.get('client') ||
+    '';
+
+  const cleanUsername = sanitizeUsername(targetUsername);
+
+  // Synchronous optimistic initialization:
+  // 1. Instant Cache hit (from memory, sessionStorage or localStorage)
+  // 2. Optimistic Profile shell (with @username and placeholder theme)
+  const initialCache = cleanUsername ? getCachedProfileSync(cleanUsername) : null;
+  const initialOptimistic = cleanUsername && !initialCache ? createOptimisticProfile(cleanUsername) : null;
+
+  const [profile, setProfile] = useState<UserProfile | null>(() => {
+    if (initialCache) return initialCache.profile;
+    if (initialOptimistic) return initialOptimistic;
+    return null;
+  });
+
+  const [links, setLinks] = useState<LinkItem[]>(() => {
+    if (initialCache) return initialCache.links;
+    return [];
+  });
+
+  // Never block with a cold white or empty screen when optimistic or cached data is available
+  const [loading, setLoading] = useState<boolean>(() => {
+    return !initialCache && !initialOptimistic;
+  });
+  const [notFound, setNotFound] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(() => {
+    return initialCache ? new Date(initialCache.timestamp) : null;
+  });
+
+  const unsubProfileRef = useRef<Unsubscribe | null>(null);
+  const unsubLinksRef = useRef<Unsubscribe | null>(null);
 
   const cleanupListeners = useCallback(() => {
     if (unsubProfileRef.current) {
@@ -46,24 +74,20 @@ export function PublicProfilePage() {
 
   const loadPublicData = useCallback(
     async (isRefresh = false) => {
-      if (!targetUsername) {
+      if (!cleanUsername) {
+        setNotFound(true);
+        setLoading(false);
+        return;
+      }
+
+      // Avoid querying Firestore for browser asset requests (favicon.ico, manifest, etc.)
+      if (/\.(png|jpe?g|gif|svg|ico|json|webmanifest|xml|txt|js|css|map)$/i.test(cleanUsername)) {
         setNotFound(true);
         setLoading(false);
         return;
       }
 
       cleanupListeners();
-
-      // Decode URL components safely (e.g. handle %20, accents, or @ handle)
-      let decoded = '';
-      try {
-        decoded = decodeURIComponent(targetUsername).trim();
-      } catch {
-        decoded = targetUsername.trim();
-      }
-
-      const rawId = decoded.replace(/^@/, '').trim();
-      const cleanUsername = rawId.toLowerCase().trim();
 
       // Redirect reserved system routes if they accidentally hit this wildcard
       if (['client', 'cliente', 'portal', 'perfil'].includes(cleanUsername)) {
@@ -79,9 +103,9 @@ export function PublicProfilePage() {
         return;
       }
 
-      if (!isRefresh) {
+      // If user pulled to refresh, keep current view while fetching
+      if (!isRefresh && !profile) {
         setLoading(true);
-        setNotFound(false);
       }
 
       try {
@@ -90,95 +114,104 @@ export function PublicProfilePage() {
         let loadedProfile: UserProfile | null = null;
         let docSource: 'profiles' | 'users' | null = null;
 
-        // Step 0: Fast direct document lookup by document ID in 'profiles'
-        try {
-          const directProfileDoc = await getDoc(doc(db, 'profiles', cleanUsername));
-          if (directProfileDoc.exists()) {
-            const clientData = directProfileDoc.data() as ClientProfile;
-            profileId = directProfileDoc.id;
-            userUid = clientData.ownerUid || 'client';
-            docSource = 'profiles';
-            loadedProfile = {
-              uid: userUid,
-              username: clientData.username || cleanUsername,
-              email: '',
-              displayName: clientData.displayName || clientData.clientName,
-              bio: clientData.bio,
-              avatarUrl: clientData.avatarUrl,
-              theme_preferences: clientData.theme_preferences,
-              vcard_details: clientData.vcard_details,
-              modules: clientData.modules,
-            };
-          }
-        } catch (e) {
-          console.warn('Direct profile doc lookup err:', e);
+        // Step 0: PARALLEL LOOKUP of direct IDs in profiles, usernames registry, and users
+        const [profileDirectRes, usernameIndexRes, userDirectRes] = await Promise.allSettled([
+          getDoc(doc(db, 'profiles', cleanUsername)),
+          getDoc(doc(db, 'usernames', cleanUsername)),
+          getDoc(doc(db, 'users', cleanUsername)),
+        ]);
+
+        // Check direct profile doc
+        if (profileDirectRes.status === 'fulfilled' && profileDirectRes.value.exists()) {
+          const clientData = profileDirectRes.value.data() as ClientProfile;
+          profileId = profileDirectRes.value.id;
+          userUid = clientData.ownerUid || 'client';
+          docSource = 'profiles';
+          loadedProfile = {
+            uid: userUid,
+            username: clientData.username || cleanUsername,
+            email: '',
+            displayName: clientData.displayName || clientData.clientName,
+            bio: clientData.bio,
+            avatarUrl: clientData.avatarUrl,
+            theme_preferences: clientData.theme_preferences,
+            vcard_details: clientData.vcard_details,
+            modules: clientData.modules,
+          };
         }
 
-        // Step 0b: Fast direct document lookup by document ID in 'users'
-        if (!loadedProfile) {
-          try {
-            const directUserDoc = await getDoc(doc(db, 'users', cleanUsername));
-            if (directUserDoc.exists()) {
-              const uData = directUserDoc.data() as UserProfile;
-              userUid = uData.uid || directUserDoc.id;
-              docSource = 'users';
-              loadedProfile = {
-                ...uData,
-                uid: userUid,
-                username: uData.username || cleanUsername,
-              };
+        // Check username registry index if not found
+        if (!loadedProfile && usernameIndexRes.status === 'fulfilled' && usernameIndexRes.value.exists()) {
+          const unameData = usernameIndexRes.value.data();
+          const targetUid = unameData?.uid || null;
+          const targetProfileId = unameData?.profileId || null;
+
+          if (targetProfileId) {
+            try {
+              const pSnap = await getDoc(doc(db, 'profiles', targetProfileId));
+              if (pSnap.exists()) {
+                const cData = pSnap.data() as ClientProfile;
+                profileId = pSnap.id;
+                userUid = cData.ownerUid || targetUid || 'client';
+                docSource = 'profiles';
+                loadedProfile = {
+                  uid: userUid || 'client',
+                  username: cData.username || cleanUsername,
+                  email: '',
+                  displayName: cData.displayName || cData.clientName,
+                  bio: cData.bio,
+                  avatarUrl: cData.avatarUrl,
+                  theme_preferences: cData.theme_preferences,
+                  vcard_details: cData.vcard_details,
+                  modules: cData.modules,
+                };
+              }
+            } catch (e) {
+              console.warn('Index profile resolve error:', e);
             }
-          } catch (e) {
-            console.warn('Direct user doc lookup err:', e);
           }
-        }
 
-        // Step 1: Query 'users' collection using where('username', '==', username)
-        if (!loadedProfile) {
-          try {
-            const usersRef = collection(db, 'users');
-            const userQuery = query(usersRef, where('username', '==', cleanUsername));
-            const userSnap = await getDocs(userQuery);
-
-            if (!userSnap.empty) {
-              const docSnap = userSnap.docs[0];
-              const uData = docSnap.data() as UserProfile;
-              userUid = uData.uid || docSnap.id;
-              docSource = 'users';
-              loadedProfile = {
-                ...uData,
-                uid: userUid,
-                username: uData.username || cleanUsername,
-              };
-            } else if (rawId !== cleanUsername) {
-              const rawUserQuery = query(usersRef, where('username', '==', rawId));
-              const rawUserSnap = await getDocs(rawUserQuery);
-              if (!rawUserSnap.empty) {
-                const docSnap = rawUserSnap.docs[0];
-                const uData = docSnap.data() as UserProfile;
-                userUid = uData.uid || docSnap.id;
+          if (!loadedProfile && targetUid) {
+            try {
+              const uSnap = await getDoc(doc(db, 'users', targetUid));
+              if (uSnap.exists()) {
+                const uData = uSnap.data() as UserProfile;
+                userUid = uData.uid || targetUid;
                 docSource = 'users';
                 loadedProfile = {
                   ...uData,
-                  uid: userUid,
-                  username: uData.username || rawId,
+                  uid: userUid || targetUid,
+                  username: uData.username || cleanUsername,
                 };
               }
+            } catch (e) {
+              console.warn('Index user resolve error:', e);
             }
-          } catch (userQueryErr) {
-            console.warn('Error querying users by username:', userQueryErr);
           }
         }
 
-        // Step 2: Query 'profiles' collection using where('username', '==', username)
+        // Check direct user doc if not found
+        if (!loadedProfile && userDirectRes.status === 'fulfilled' && userDirectRes.value.exists()) {
+          const uData = userDirectRes.value.data() as UserProfile;
+          userUid = uData.uid || userDirectRes.value.id;
+          docSource = 'users';
+          loadedProfile = {
+            ...uData,
+            uid: userUid,
+            username: uData.username || cleanUsername,
+          };
+        }
+
+        // Step 1: Query collections by username field in PARALLEL if not direct hit
         if (!loadedProfile) {
           try {
-            const profilesRef = collection(db, 'profiles');
-            const profileQuery = query(profilesRef, where('username', '==', cleanUsername));
-            const profileSnap = await getDocs(profileQuery);
+            const [usersQuerySnap, profilesQuerySnap] = await Promise.all([
+              getDocs(query(collection(db, 'users'), where('username', '==', cleanUsername))),
+              getDocs(query(collection(db, 'profiles'), where('username', '==', cleanUsername))),
+            ]);
 
-            if (!profileSnap.empty) {
-              const docSnap = profileSnap.docs[0];
+            if (!profilesQuerySnap.empty) {
+              const docSnap = profilesQuerySnap.docs[0];
               const clientData = docSnap.data() as ClientProfile;
               profileId = docSnap.id;
               userUid = clientData.ownerUid || 'client';
@@ -194,85 +227,19 @@ export function PublicProfilePage() {
                 vcard_details: clientData.vcard_details,
                 modules: clientData.modules,
               };
-            } else if (rawId !== cleanUsername) {
-              const rawProfileQuery = query(profilesRef, where('username', '==', rawId));
-              const rawProfileSnap = await getDocs(rawProfileQuery);
-              if (!rawProfileSnap.empty) {
-                const docSnap = rawProfileSnap.docs[0];
-                const clientData = docSnap.data() as ClientProfile;
-                profileId = docSnap.id;
-                userUid = clientData.ownerUid || 'client';
-                docSource = 'profiles';
-                loadedProfile = {
-                  uid: userUid,
-                  username: clientData.username || rawId,
-                  email: '',
-                  displayName: clientData.displayName || clientData.clientName,
-                  bio: clientData.bio,
-                  avatarUrl: clientData.avatarUrl,
-                  theme_preferences: clientData.theme_preferences,
-                  vcard_details: clientData.vcard_details,
-                  modules: clientData.modules,
-                };
-              }
+            } else if (!usersQuerySnap.empty) {
+              const docSnap = usersQuerySnap.docs[0];
+              const uData = docSnap.data() as UserProfile;
+              userUid = uData.uid || docSnap.id;
+              docSource = 'users';
+              loadedProfile = {
+                ...uData,
+                uid: userUid,
+                username: uData.username || cleanUsername,
+              };
             }
-          } catch (profileQueryErr) {
-            console.warn('Error querying profiles by username:', profileQueryErr);
-          }
-        }
-
-        // Step 3: Check usernames/{cleanUsername} index registry as a fast pointer
-        if (!loadedProfile) {
-          try {
-            const unameDocRef = doc(db, 'usernames', cleanUsername);
-            const unameSnap = await getDoc(unameDocRef);
-
-            if (unameSnap.exists()) {
-              const unameData = unameSnap.data();
-              const targetUid = unameData?.uid || null;
-              const targetProfileId = unameData?.profileId || null;
-
-              if (targetProfileId) {
-                const profileDocRef = doc(db, 'profiles', targetProfileId);
-                const profileSnap = await getDoc(profileDocRef);
-                if (profileSnap.exists()) {
-                  const clientData = profileSnap.data() as ClientProfile;
-                  profileId = profileSnap.id;
-                  const finalUid = clientData.ownerUid || targetUid || 'client';
-                  userUid = finalUid;
-                  docSource = 'profiles';
-                  loadedProfile = {
-                    uid: finalUid,
-                    username: clientData.username || cleanUsername,
-                    email: '',
-                    displayName: clientData.displayName || clientData.clientName,
-                    bio: clientData.bio,
-                    avatarUrl: clientData.avatarUrl,
-                    theme_preferences: clientData.theme_preferences,
-                    vcard_details: clientData.vcard_details,
-                    modules: clientData.modules,
-                  };
-                }
-              }
-
-              if (!loadedProfile && targetUid) {
-                const userDocRef = doc(db, 'users', targetUid);
-                const userSnap = await getDoc(userDocRef);
-                if (userSnap.exists()) {
-                  const uData = userSnap.data() as UserProfile;
-                  const finalUid = uData.uid || targetUid;
-                  userUid = finalUid;
-                  docSource = 'users';
-                  loadedProfile = {
-                    ...uData,
-                    uid: finalUid,
-                    username: uData.username || cleanUsername,
-                  };
-                }
-              }
-            }
-          } catch (unameErr) {
-            console.warn('Error checking usernames registry index:', unameErr);
+          } catch (queryErr) {
+            console.warn('Parallel query by username err:', queryErr);
           }
         }
 
@@ -328,37 +295,49 @@ export function PublicProfilePage() {
         try {
           if (docSource === 'profiles' && profileId) {
             const profileDocRef = doc(db, 'profiles', profileId);
-            unsubProfileRef.current = onSnapshot(profileDocRef, (snap) => {
-              if (snap.exists()) {
-                const clientData = snap.data() as ClientProfile;
-                setProfile((prev) => ({
-                  uid: clientData.ownerUid || prev?.uid || 'client',
-                  username: clientData.username || prev?.username || cleanUsername,
-                  email: prev?.email || '',
-                  displayName: clientData.displayName || clientData.clientName || prev?.displayName || '',
-                  bio: clientData.bio,
-                  avatarUrl: clientData.avatarUrl,
-                  theme_preferences: clientData.theme_preferences,
-                  vcard_details: clientData.vcard_details,
-                  modules: clientData.modules,
-                }));
-                setLastUpdated(new Date());
+            unsubProfileRef.current = onSnapshot(
+              profileDocRef,
+              (snap) => {
+                if (snap.exists()) {
+                  const clientData = snap.data() as ClientProfile;
+                  setProfile((prev) => ({
+                    uid: clientData.ownerUid || prev?.uid || 'client',
+                    username: clientData.username || prev?.username || cleanUsername,
+                    email: prev?.email || '',
+                    displayName: clientData.displayName || clientData.clientName || prev?.displayName || '',
+                    bio: clientData.bio,
+                    avatarUrl: clientData.avatarUrl,
+                    theme_preferences: clientData.theme_preferences,
+                    vcard_details: clientData.vcard_details,
+                    modules: clientData.modules,
+                  }));
+                  setLastUpdated(new Date());
+                }
+              },
+              (err) => {
+                console.warn('Real-time profile listener notice (handled):', err);
               }
-            });
+            );
           } else if (docSource === 'users' && userUid) {
             const userDocRef = doc(db, 'users', userUid);
-            unsubProfileRef.current = onSnapshot(userDocRef, (snap) => {
-              if (snap.exists()) {
-                const uData = snap.data() as UserProfile;
-                setProfile((prev) => ({
-                  ...prev,
-                  ...uData,
-                  uid: uData.uid || snap.id,
-                  username: uData.username || prev?.username || cleanUsername,
-                }));
-                setLastUpdated(new Date());
+            unsubProfileRef.current = onSnapshot(
+              userDocRef,
+              (snap) => {
+                if (snap.exists()) {
+                  const uData = snap.data() as UserProfile;
+                  setProfile((prev) => ({
+                    ...prev,
+                    ...uData,
+                    uid: uData.uid || snap.id,
+                    username: uData.username || prev?.username || cleanUsername,
+                  }));
+                  setLastUpdated(new Date());
+                }
+              },
+              (err) => {
+                console.warn('Real-time user listener notice (handled):', err);
               }
-            });
+            );
           }
         } catch (subErr) {
           console.warn('Error setting up profile snapshot listener:', subErr);
@@ -376,24 +355,42 @@ export function PublicProfilePage() {
           }
 
           if (linksQuery) {
-            unsubLinksRef.current = onSnapshot(linksQuery, (snapshot) => {
-              const fetchedLinks: LinkItem[] = [];
-              snapshot.forEach((d) => {
-                const data = d.data() as Omit<LinkItem, 'id'>;
-                if (profileId && profileId !== 'main') {
-                  fetchedLinks.push({ id: d.id, ...data });
-                } else {
-                  const linkProfileId = data.profileId || 'main';
-                  if (linkProfileId === 'main') {
+            unsubLinksRef.current = onSnapshot(
+              linksQuery,
+              (snapshot) => {
+                const fetchedLinks: LinkItem[] = [];
+                snapshot.forEach((d) => {
+                  const data = d.data() as Omit<LinkItem, 'id'>;
+                  if (profileId && profileId !== 'main') {
                     fetchedLinks.push({ id: d.id, ...data });
+                  } else {
+                    const linkProfileId = data.profileId || 'main';
+                    if (linkProfileId === 'main') {
+                      fetchedLinks.push({ id: d.id, ...data });
+                    }
                   }
-                }
-              });
+                });
 
-              fetchedLinks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-              setLinks(fetchedLinks);
-              setLastUpdated(new Date());
-            });
+                fetchedLinks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                setLinks(fetchedLinks);
+                setLastUpdated(new Date());
+
+                // Store in fast memory & persistent cache for instant subsequent visits
+                if (loadedProfile && docSource) {
+                  persistProfileCache(cleanUsername, {
+                    profile: loadedProfile,
+                    links: fetchedLinks,
+                    docSource,
+                    userUid: userUid || 'client',
+                    profileId,
+                    timestamp: Date.now(),
+                  });
+                }
+              },
+              (err) => {
+                console.warn('Real-time links listener notice (handled):', err);
+              }
+            );
           }
         } catch (linkErr) {
           console.warn('Error fetching profile links (profile still displayed):', linkErr);
@@ -402,7 +399,7 @@ export function PublicProfilePage() {
         setLastUpdated(new Date());
       } catch (err) {
         console.error('Error fetching public profile:', err);
-        if (!isRefresh) {
+        if (!isRefresh && (!profile || profile.isOptimistic)) {
           setNotFound(true);
         }
       } finally {
@@ -411,7 +408,7 @@ export function PublicProfilePage() {
         }
       }
     },
-    [targetUsername, navigate, cleanupListeners]
+    [cleanUsername, navigate, cleanupListeners, profile]
   );
 
   useEffect(() => {
@@ -425,6 +422,14 @@ export function PublicProfilePage() {
   const handlePullToRefresh = async () => {
     await loadPublicData(true);
   };
+
+  // Sync document title with profile name for rich browser tabs & bookmarks
+  useEffect(() => {
+    if (profile?.displayName || profile?.username) {
+      const name = profile.displayName || profile.username;
+      document.title = `${name} • Tarjeta Digital`;
+    }
+  }, [profile?.displayName, profile?.username]);
 
   // Loading skeleton state - Smooth, high-fidelity placeholder layout while fetching Firestore data
   if (loading) {
@@ -447,22 +452,10 @@ export function PublicProfilePage() {
             </p>
           </div>
 
-          <div className="pt-2 flex flex-col gap-3">
-            <Link
-              to="/dashboard"
-              className="w-full py-3 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-400/20"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Ir al Panel de Perfiles</span>
-            </Link>
-
-            <Link
-              to="/"
-              className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors flex items-center justify-center gap-2"
-            >
-              <Home className="w-4 h-4" />
-              <span>Volver a la Página Principal</span>
-            </Link>
+          <div className="pt-2">
+            <p className="text-xs text-slate-500">
+              Verifica que la dirección compartida no contenga errores de escritura.
+            </p>
           </div>
         </div>
       </div>
@@ -470,32 +463,13 @@ export function PublicProfilePage() {
   }
 
   // Render Full Public Profile View with Pull-To-Refresh gesture support
+  // 100% focused on profile info: no menu buttons, no panel return, no promotional widgets
   return (
     <PullToRefresh
       onRefresh={handlePullToRefresh}
       lastUpdated={lastUpdated}
       className="min-h-screen w-full relative"
     >
-      {/* Return to Dashboard / Portal for creator */}
-      {currentUser && (
-        <div className="fixed top-3 left-3 z-50">
-          <button
-            id="return-to-panel-btn"
-            onClick={() => navigate(-1)}
-            className="px-3.5 py-1.5 rounded-full bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border border-slate-700/80 shadow-xl text-xs font-semibold backdrop-blur-md transition-all flex items-center gap-1.5 active:scale-95"
-            title="Volver al panel"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Volver al panel</span>
-          </button>
-        </div>
-      )}
-
-      {/* PWA Install Button on top right */}
-      <div className="fixed top-3 right-3 z-50">
-        <PWAInstallButton />
-      </div>
-
       <ProfileView profile={profile} links={links} isPreview={false} />
     </PullToRefresh>
   );

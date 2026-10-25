@@ -381,3 +381,5 @@ export function HomePage() {
     </div>
   );
 }
+
+export default HomePage;

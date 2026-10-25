@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   UserCheck,
@@ -31,19 +31,29 @@ import {
   MessageSquare,
   Video,
   Radio,
+  Languages,
 } from 'lucide-react';
-import { UserProfile, LinkItem, ThemePreferences } from '../types';
+import { UserProfile, LinkItem, ThemePreferences, SupportedLanguage } from '../types';
 import { downloadVCard, generateAndDownloadVCF } from '../utils/vcard';
-import { QRCodeGeneratorModal } from './QRCodeModal';
 import { getPublicProfileUrl, formatExternalUrl } from '../utils/urlHelper';
 import { copyToClipboard } from '../utils/clipboard';
 import { getOfficialBrandIcon } from './BrandIcons';
-import { ProfileModulesView } from './ProfileModulesView';
-import { LeadCaptureModal } from './LeadCaptureModal';
 import { parseVideoUrl } from '../utils/videoHelper';
 import { LeadContactItem } from '../types';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { t, SUPPORTED_LANGUAGES, translateSectionName, getTranslatedBio } from '../utils/i18n';
+
+// Lazy-load heavy subcomponents & modals on demand so initial card shell paints in milliseconds
+const ProfileModulesView = React.lazy(() =>
+  import('./ProfileModulesView').then((m) => ({ default: m.ProfileModulesView }))
+);
+const QRCodeGeneratorModal = React.lazy(() =>
+  import('./QRCodeModal').then((m) => ({ default: m.QRCodeGeneratorModal }))
+);
+const LeadCaptureModal = React.lazy(() =>
+  import('./LeadCaptureModal').then((m) => ({ default: m.LeadCaptureModal }))
+);
 
 interface ProfileViewProps {
   profile: UserProfile;
@@ -68,6 +78,42 @@ export function ProfileView({
   const [showShareModal, setShowShareModal] = useState(false);
   const [showQRModal, setShowQRModal] = useState(false);
   const [showLeadModal, setShowLeadModal] = useState(false);
+
+  // Language configuration and 1-click switcher state
+  const initialLanguage: SupportedLanguage =
+    profile.language?.defaultLanguage ||
+    profile.modules?.language?.defaultLanguage ||
+    'es';
+
+  const [currentLang, setCurrentLang] = useState<SupportedLanguage>(initialLanguage);
+
+  useEffect(() => {
+    const lang =
+      profile.language?.defaultLanguage ||
+      profile.modules?.language?.defaultLanguage ||
+      'es';
+    setCurrentLang(lang);
+  }, [profile.language?.defaultLanguage, profile.modules?.language?.defaultLanguage]);
+
+  const languageMode =
+    profile.language?.mode ||
+    profile.modules?.language?.mode ||
+    'fixed';
+  const showLanguageSwitcher = languageMode === 'switcher';
+  const availableLangs: SupportedLanguage[] =
+    profile.language?.availableLanguages ||
+    profile.modules?.language?.availableLanguages ||
+    ['es', 'en'];
+
+  const handleToggleLanguage = () => {
+    if (availableLangs.length <= 1) return;
+    const currentIndex = availableLangs.indexOf(currentLang);
+    const nextIndex =
+      currentIndex === -1 || currentIndex === availableLangs.length - 1
+        ? 0
+        : currentIndex + 1;
+    setCurrentLang(availableLangs[nextIndex]);
+  };
 
   const handleSaveLead = async (leadData: Omit<LeadContactItem, 'id' | 'createdAt'>) => {
     const newLead: LeadContactItem = {
@@ -322,7 +368,29 @@ export function ProfileView({
       <div className="relative z-10 max-w-md sm:max-w-lg md:max-w-xl mx-auto w-full">
         {/* Top action bar */}
         <div className="w-full flex items-center justify-between mb-4 sm:mb-6">
-          <div />
+          {/* Top-left: One-click Language Switcher (when enabled in settings) */}
+          {showLanguageSwitcher ? (
+            <motion.button
+              id="top-left-lang-switcher"
+              type="button"
+              onClick={handleToggleLanguage}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.94 }}
+              transition={{ type: 'spring', stiffness: 450, damping: 25 }}
+              title={`Idioma actual: ${currentLang.toUpperCase()} • Clic para cambiar`}
+              className="min-h-[44px] px-3.5 py-2 rounded-full backdrop-blur-md bg-black/15 hover:bg-black/25 dark:bg-white/10 dark:hover:bg-white/20 transition-all flex items-center justify-center gap-1.5 text-xs font-bold select-none border border-white/10 shadow-sm cursor-pointer"
+              style={{ color: theme.cardTextColor }}
+            >
+              <Languages className="w-4 h-4 text-sky-400" />
+              <span className="uppercase tracking-wider font-extrabold">{currentLang}</span>
+              <span className="opacity-40 text-[10px]">⇄</span>
+              <span className="uppercase text-[11px] opacity-70">
+                {availableLangs.find((l) => l !== currentLang) || (currentLang === 'es' ? 'en' : 'es')}
+              </span>
+            </motion.button>
+          ) : (
+            <div />
+          )}
 
           <div className="flex items-center gap-2">
             <motion.button
@@ -331,7 +399,7 @@ export function ProfileView({
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.92 }}
               transition={{ type: 'spring', stiffness: 450, damping: 25 }}
-              title="Ver Código QR"
+              title={t('viewQr', currentLang)}
               className="min-h-[44px] min-w-[44px] p-2.5 rounded-full backdrop-blur-md bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition-all flex items-center justify-center gap-1.5 text-xs font-medium select-none"
               style={{ color: theme.cardTextColor }}
             >
@@ -345,19 +413,19 @@ export function ProfileView({
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.92 }}
               transition={{ type: 'spring', stiffness: 450, damping: 25 }}
-              title="Share or copy profile link"
+              title={t('share', currentLang)}
               className="min-h-[44px] min-w-[44px] p-2.5 rounded-full backdrop-blur-md bg-black/10 hover:bg-black/20 dark:bg-white/10 dark:hover:bg-white/20 transition-all flex items-center justify-center gap-1.5 text-xs font-medium select-none"
               style={{ color: theme.cardTextColor }}
             >
               {copied ? (
                 <>
                   <Check className="w-4 h-4 text-emerald-500" />
-                  <span>Copiado</span>
+                  <span>{t('copied', currentLang)}</span>
                 </>
               ) : (
                 <>
                   <Share2 className="w-4 h-4" />
-                  <span className="hidden sm:inline">Compartir</span>
+                  <span className="hidden sm:inline">{t('share', currentLang)}</span>
                 </>
               )}
             </motion.button>
@@ -371,6 +439,8 @@ export function ProfileView({
             <img
               src={theme.cardTemplateUrl}
               alt="Plantilla de tarjeta"
+              loading="lazy"
+              decoding="async"
               className="w-full h-full object-cover"
               style={{ opacity: theme.cardTemplateOpacity ?? 0.95 }}
             />
@@ -400,6 +470,8 @@ export function ProfileView({
                 <img
                   src={profile.avatarUrl}
                   alt={profile.displayName || profile.username}
+                  decoding="async"
+                  fetchPriority="high"
                   className={`w-24 h-24 sm:w-28 sm:h-28 ${avatarRadiusClass} object-cover shadow-xl border-4 transition-all`}
                   style={{
                     borderColor: theme.cardBorderColor || 'rgba(255,255,255,0.2)',
@@ -476,7 +548,7 @@ export function ProfileView({
             className="text-sm sm:text-base leading-relaxed max-w-sm mb-6 opacity-90 whitespace-pre-line"
             style={{ color: theme.cardTextColor }}
           >
-            {profile.bio}
+            {getTranslatedBio(profile, currentLang)}
           </p>
         )}
 
@@ -493,7 +565,7 @@ export function ProfileView({
                 className="py-3 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition-colors select-none"
               >
                 <PhoneCall className="w-4 h-4 text-slate-950" />
-                <span>Llamar</span>
+                <span>{t('call', currentLang)}</span>
               </motion.a>
 
               <motion.a
@@ -508,7 +580,7 @@ export function ProfileView({
                 className="py-3 px-4 rounded-2xl bg-[#25D366] hover:bg-[#20bd5a] text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 transition-colors select-none"
               >
                 <MessageCircle className="w-4 h-4 text-slate-950" />
-                <span>WhatsApp</span>
+                <span>{t('whatsapp', currentLang)}</span>
               </motion.a>
             </div>
 
@@ -526,12 +598,12 @@ export function ProfileView({
               {copiedPhone ? (
                 <>
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>¡Teléfono copiado! ({rawPhone})</span>
+                  <span>¡{rawPhone}!</span>
                 </>
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5" />
-                  <span>{rawPhone} • Copiar Número</span>
+                  <span>{rawPhone}</span>
                 </>
               )}
             </motion.button>
@@ -558,12 +630,12 @@ export function ProfileView({
               {vcardDownloaded ? (
                 <>
                   <Check className="w-5 h-5 text-white" />
-                  <span>Contacto Descargado (.vcf)</span>
+                  <span>{t('contactDownloaded', currentLang)}</span>
                 </>
               ) : (
                 <>
                   <Download className="w-5 h-5" />
-                  <span>Guardar Contacto en el Teléfono</span>
+                  <span>{t('saveContact', currentLang)}</span>
                 </>
               )}
             </motion.button>
@@ -586,7 +658,7 @@ export function ProfileView({
                 }}
               >
                 <QrCode className="w-4 h-4" />
-                <span>Ver Código QR de Tarjeta Digital</span>
+                <span>{t('viewQr', currentLang)}</span>
               </motion.button>
             )}
 
@@ -594,7 +666,7 @@ export function ProfileView({
               className="text-[11px] mt-1.5 opacity-60"
               style={{ color: theme.cardTextColor }}
             >
-              Importa Nombre, Teléfono, Correo y Empresa directamente a tus contactos
+              {t('vcardHint', currentLang)}
             </p>
           </div>
         )}
@@ -619,18 +691,23 @@ export function ProfileView({
               }}
             >
               <QrCode className="w-4 h-4" />
-              <span>Código QR del Perfil</span>
+              <span>{t('profileQr', currentLang)}</span>
             </motion.button>
           </div>
         )}
 
-        {/* Interactive Profile Modules: Social Strip, Hours, Location, Bank Details, Catalog, Reviews, Leads */}
-        <ProfileModulesView
-          modules={profile.modules}
-          theme={theme}
-          onOpenLeadCapture={() => setShowLeadModal(true)}
-          onLinkClick={handleLinkClick}
-        />
+        {/* Interactive Profile Modules: Social Strip, Hours, Location, Bank Details, Catalog, Reviews, Leads (Lazy Loaded via Suspense) */}
+        {profile.modules && (
+          <React.Suspense fallback={<div className="w-full h-8 rounded-xl bg-white/5 animate-pulse my-2" />}>
+            <ProfileModulesView
+              modules={profile.modules}
+              theme={theme}
+              lang={currentLang}
+              onOpenLeadCapture={() => setShowLeadModal(true)}
+              onLinkClick={handleLinkClick}
+            />
+          </React.Suspense>
+        )}
 
         {/* Active Links - Organized by Group */}
         <div className="w-full space-y-6">
@@ -676,24 +753,31 @@ export function ProfileView({
           )}
 
           {/* Grouped Links */}
-          {Object.entries(groupedLinks).map(([groupName, groupLinks]) => (
-            <div key={groupName} className="space-y-3 pt-2">
-              <div className="flex items-center gap-3">
-                <div
-                  className="h-px flex-1 opacity-20"
-                  style={{ backgroundColor: theme.cardTextColor }}
-                />
-                <h2
-                  className="text-xs font-bold uppercase tracking-widest opacity-70 px-2"
-                  style={{ color: theme.cardTextColor }}
-                >
-                  {groupName}
-                </h2>
-                <div
-                  className="h-px flex-1 opacity-20"
-                  style={{ backgroundColor: theme.cardTextColor }}
-                />
-              </div>
+          {Object.entries(groupedLinks).map(([groupName, groupLinks]) => {
+            const translatedGroupName = translateSectionName(
+              groupName,
+              currentLang,
+              profile.language?.sectionTranslations || profile.modules?.language?.sectionTranslations
+            );
+
+            return (
+              <div key={groupName} className="space-y-3 pt-2">
+                <div className="flex items-center gap-3">
+                  <div
+                    className="h-px flex-1 opacity-20"
+                    style={{ backgroundColor: theme.cardTextColor }}
+                  />
+                  <h2
+                    className="text-xs font-bold uppercase tracking-widest opacity-70 px-2"
+                    style={{ color: theme.cardTextColor }}
+                  >
+                    {translatedGroupName}
+                  </h2>
+                  <div
+                    className="h-px flex-1 opacity-20"
+                    style={{ backgroundColor: theme.cardTextColor }}
+                  />
+                </div>
 
               <div className="space-y-3">
                 {groupLinks.map((link) => {
@@ -733,10 +817,37 @@ export function ProfileView({
                 })}
               </div>
             </div>
-          ))}
+          );
+        })}
 
-          {/* Empty State */}
-          {activeLinks.length === 0 && (
+          {/* Optimistic UI Placeholder for Links while live database stream connects */}
+          {profile.isOptimistic && activeLinks.length === 0 && (
+            <div className="space-y-3 w-full animate-pulse pt-1">
+              {[1, 2, 3].map((index) => (
+                <div
+                  key={index}
+                  className="w-full p-4 flex items-center justify-between shadow-sm border"
+                  style={{
+                    backgroundColor: theme.cardBgColor || 'rgba(255,255,255,0.06)',
+                    borderColor: theme.cardBorderColor || 'rgba(255,255,255,0.1)',
+                    borderRadius: '1rem',
+                  }}
+                >
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-white/10 shrink-0" />
+                    <div
+                      className="h-4 rounded-md bg-white/15"
+                      style={{ width: index === 1 ? '160px' : index === 2 ? '210px' : '130px' }}
+                    />
+                  </div>
+                  <div className="w-4 h-4 rounded bg-white/10 shrink-0" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Empty State when confirmed loaded and genuinely has no links */}
+          {!profile.isOptimistic && activeLinks.length === 0 && (
             <div
               className="py-12 px-6 rounded-2xl border border-dashed text-center opacity-60"
               style={{
@@ -744,7 +855,7 @@ export function ProfileView({
                 color: theme.cardTextColor,
               }}
             >
-              <p className="text-sm font-medium">No hay enlaces publicados todavía.</p>
+              <p className="text-sm font-medium">{t('noLinks', currentLang)}</p>
             </div>
           )}
         </div>
@@ -886,44 +997,36 @@ export function ProfileView({
           </div>
         )}
 
-        {/* Powered by LumenBase NFC footer badge (non-interactive watermark) */}
-        <div className="mt-10 text-center select-none pb-4 pointer-events-none">
-          <div
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md bg-black/10 dark:bg-white/10 text-xs font-semibold opacity-70 cursor-default pointer-events-none select-none"
-            style={{ color: theme.cardTextColor }}
-          >
-            <img
-              src="/logo.png"
-              alt="LumenBase Logo"
-              className="w-4 h-4 rounded-sm object-contain"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = 'https://cdn.phototourl.com/member/2026-10-05-02a458cf-82cd-4965-8549-b353e6c1a1ca.png';
-              }}
-            />
-            <span>LumenBase NFC</span>
-          </div>
-        </div>
+        <div className="pb-8" />
       </div>
       </div>
 
-      {/* QR Code Modal (View-Only for public link profile visitors) */}
-      <QRCodeGeneratorModal
-        isOpen={showQRModal}
-        onClose={() => setShowQRModal(false)}
-        profile={profile}
-        customTitle={`Código QR • @${profile.username}`}
-        viewOnly={true}
-      />
+      {/* QR Code Modal (Loaded on-demand only if opened) */}
+      {showQRModal && (
+        <React.Suspense fallback={null}>
+          <QRCodeGeneratorModal
+            isOpen={showQRModal}
+            onClose={() => setShowQRModal(false)}
+            profile={profile}
+            customTitle={`Código QR • @${profile.username}`}
+            viewOnly={true}
+          />
+        </React.Suspense>
+      )}
 
-      {/* Lead Capture Modal */}
-      <LeadCaptureModal
-        isOpen={showLeadModal}
-        onClose={() => setShowLeadModal(false)}
-        onSubmitLead={handleSaveLead}
-        recipientName={profile.displayName || profile.username}
-        formTitle={profile.modules?.leadCapture?.formTitle}
-        successMessage={profile.modules?.leadCapture?.successMessage}
-      />
+      {/* Lead Capture Modal (Loaded on-demand only if opened) */}
+      {showLeadModal && (
+        <React.Suspense fallback={null}>
+          <LeadCaptureModal
+            isOpen={showLeadModal}
+            onClose={() => setShowLeadModal(false)}
+            onSubmitLead={handleSaveLead}
+            recipientName={profile.displayName || profile.username}
+            formTitle={profile.modules?.leadCapture?.formTitle}
+            successMessage={profile.modules?.leadCapture?.successMessage}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 }

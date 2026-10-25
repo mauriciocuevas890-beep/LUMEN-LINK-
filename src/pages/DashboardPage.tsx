@@ -49,6 +49,7 @@ import {
   Globe,
   Server,
   Sliders,
+  Languages,
 } from 'lucide-react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -65,6 +66,7 @@ import { ProfileModulesEditor } from '../components/ProfileModulesEditor';
 import { CapturedLeadsViewer } from '../components/CapturedLeadsViewer';
 import { CustomDomainSettings } from '../components/CustomDomainSettings';
 import { VideoEmbedSettings } from '../components/VideoEmbedSettings';
+import { LanguageSettingsEditor } from '../components/LanguageSettingsEditor';
 import { THEME_PRESETS } from '../utils/themePresets';
 import { PREMADE_PROFILE_TEMPLATES } from '../utils/premadeTemplates';
 import { CURATED_BACKGROUND_PRESETS, CURATED_CARD_TEMPLATES } from '../utils/imageUpload';
@@ -72,7 +74,7 @@ import { downloadVCard, generateAndDownloadVCF, parseVCardString } from '../util
 import { cleanFirestoreData } from '../utils/cleanFirestoreData';
 import { LinkPresetsSelector } from '../components/LinkPresetsSelector';
 import { LinkPreset } from '../utils/linkPresets';
-import { ThemePreferences, VCardDetails, LinkItem, UserProfile, ClientProfile, ProfileModulesConfig, VideoEmbedModule } from '../types';
+import { ThemePreferences, VCardDetails, LinkItem, UserProfile, ClientProfile, ProfileModulesConfig, VideoEmbedModule, ProfileLanguageConfig } from '../types';
 import { getPublicProfileUrl, getClientPortalUrl, formatExternalUrl } from '../utils/urlHelper';
 import { copyToClipboard } from '../utils/clipboard';
 
@@ -87,8 +89,8 @@ export function DashboardPage() {
   // Currently active client object (if not 'main')
   const activeClient = activeClientId !== 'main' ? clients.find((c) => c.id === activeClientId) || null : null;
 
-  // Tabs: 'clients' | 'media' | 'links' | 'appearance' | 'vcard' | 'domain'
-  const [activeTab, setActiveTab] = useState<'clients' | 'media' | 'links' | 'appearance' | 'vcard' | 'domain'>('clients');
+  // Tabs: 'clients' | 'media' | 'links' | 'appearance' | 'vcard' | 'domain' | 'language'
+  const [activeTab, setActiveTab] = useState<'clients' | 'media' | 'links' | 'appearance' | 'vcard' | 'domain' | 'language'>('clients');
 
   // Multi-profile Links hook: scoped by profileId
   const {
@@ -670,6 +672,50 @@ export function DashboardPage() {
     }
   };
 
+  // Active profile language configuration
+  const activeLanguageConfig: ProfileLanguageConfig =
+    (activeClientId !== 'main'
+      ? activeClient?.language || activeClient?.modules?.language
+      : profile?.language || profile?.modules?.language) || {
+      defaultLanguage: 'es',
+      mode: 'fixed',
+      availableLanguages: ['es', 'en'],
+    };
+
+  const handleSaveDashboardLanguage = async (newConfig: ProfileLanguageConfig) => {
+    try {
+      const cleaned = cleanFirestoreData(newConfig);
+      if (activeClientId === 'main') {
+        const updatedModules: ProfileModulesConfig = {
+          ...(profile?.modules || {}),
+          language: cleaned,
+        };
+        await updateModules(cleanFirestoreData(updatedModules));
+        if (currentUser) {
+          await updateDoc(doc(db, 'users', currentUser.uid), {
+            language: cleaned,
+            updatedAt: new Date().toISOString(),
+          });
+          await refreshProfile();
+        }
+      } else if (activeClient) {
+        await updateClient(activeClient.id, {
+          language: cleaned,
+          modules: cleanFirestoreData({
+            ...(activeClient.modules || {}),
+            language: cleaned,
+          }),
+        });
+      }
+      setSaveSuccessMsg('¡Configuración de idioma guardada con éxito!');
+      setTimeout(() => setSaveSuccessMsg(null), 3000);
+    } catch (err: any) {
+      console.error('Error saving language config in dashboard:', err);
+      setSaveErrorMsg(err?.message || 'Error al guardar configuración de idioma.');
+      setTimeout(() => setSaveErrorMsg(null), 4000);
+    }
+  };
+
   // Active profile snapshot for live simulator preview
   const livePreviewProfile: UserProfile = {
     uid: currentUser?.uid || 'preview',
@@ -680,9 +726,11 @@ export function DashboardPage() {
     avatarUrl: avatarUrl,
     theme_preferences: localTheme,
     vcard_details: vcardForm,
+    language: activeLanguageConfig,
     modules: {
       ...(activeClientId === 'main' ? profile?.modules : activeClient?.modules),
       videoEmbed: localVideoEmbed,
+      language: activeLanguageConfig,
     },
   };
 
@@ -1085,6 +1133,20 @@ export function DashboardPage() {
               <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-400 text-slate-950">
                 PRO
               </span>
+            </button>
+
+            {/* Tab Idioma */}
+            <button
+              id="tab-language-btn"
+              onClick={() => setActiveTab('language')}
+              className={`flex-1 min-w-[110px] py-3 px-3 text-xs sm:text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all ${
+                activeTab === 'language'
+                  ? 'bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Languages className="w-4 h-4" />
+              <span>Idioma</span>
             </button>
           </div>
 
@@ -2147,6 +2209,35 @@ export function DashboardPage() {
                 }
               }}
             />
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB: IDIOMA DEL PERFIL                                    */}
+          {/* ======================================================== */}
+          {activeTab === 'language' && (
+            <div className="space-y-4">
+              <div className="p-4 bg-sky-950/30 border border-sky-800/40 rounded-2xl text-xs text-sky-300 flex items-start gap-2.5">
+                <Sparkles className="w-4 h-4 shrink-0 text-sky-400 mt-0.5" />
+                <div>
+                  <strong className="text-white block text-sm mb-0.5">
+                    {activeClientId !== 'main'
+                      ? `Configuración de Idioma para ${activeClient?.clientName}`
+                      : 'Configuración de Idioma de Mi Perfil Principal'}
+                  </strong>
+                  <span>
+                    Elige si esta tarjeta digital se mostrará en un idioma fijo sin botones adicionales, o si deseas incluir un botón selector en la esquina superior izquierda para que tus clientes cambien el idioma con 1 solo clic.
+                  </span>
+                </div>
+              </div>
+
+              <LanguageSettingsEditor
+                languageConfig={activeLanguageConfig}
+                onSaveLanguage={handleSaveDashboardLanguage}
+                accentColor={localTheme.accentColor}
+                currentBio={bio}
+                sectionNames={Array.from(new Set(links.map((l) => l.group_name?.trim()).filter(Boolean))) as string[]}
+              />
+            </div>
           )}
 
           {/* ======================================================== */}
@@ -3500,3 +3591,5 @@ export function DashboardPage() {
     </div>
   );
 }
+
+export default DashboardPage;

@@ -38,11 +38,14 @@ import {
   TelegramIcon,
   GoogleIcon,
 } from './BrandIcons';
+import { SupportedLanguage } from '../types';
+import { t } from '../utils/i18n';
 import { formatExternalUrl } from '../utils/urlHelper';
 
 interface ProfileModulesViewProps {
   modules?: ProfileModulesConfig;
   theme: ThemePreferences;
+  lang?: SupportedLanguage;
   onOpenLeadCapture?: () => void;
   onLinkClick?: (e: React.MouseEvent<HTMLAnchorElement>, url: string) => void;
 }
@@ -50,6 +53,7 @@ interface ProfileModulesViewProps {
 export function ProfileModulesView({
   modules,
   theme,
+  lang = 'es',
   onOpenLeadCapture,
   onLinkClick,
 }: ProfileModulesViewProps) {
@@ -71,6 +75,7 @@ export function ProfileModulesView({
         <LeadCaptureCta
           leadModule={modules.leadCapture}
           theme={theme}
+          lang={lang}
           onOpen={onOpenLeadCapture}
         />
       )}
@@ -80,6 +85,7 @@ export function ProfileModulesView({
         <BusinessHoursView
           hours={modules.businessHours}
           theme={theme}
+          lang={lang}
         />
       )}
 
@@ -88,6 +94,7 @@ export function ProfileModulesView({
         <LocationView
           loc={modules.location}
           theme={theme}
+          lang={lang}
           onLinkClick={onLinkClick}
         />
       )}
@@ -97,6 +104,7 @@ export function ProfileModulesView({
         <BankDetailsView
           bank={modules.bankDetails}
           theme={theme}
+          lang={lang}
         />
       )}
 
@@ -105,6 +113,7 @@ export function ProfileModulesView({
         <CatalogView
           catalog={modules.catalog}
           theme={theme}
+          lang={lang}
           whatsappNumber={modules.socialStrip?.whatsapp}
           onLinkClick={onLinkClick}
         />
@@ -115,6 +124,7 @@ export function ProfileModulesView({
         <TestimonialsView
           testimonials={modules.testimonials}
           theme={theme}
+          lang={lang}
           onLinkClick={onLinkClick}
         />
       )}
@@ -255,10 +265,12 @@ function SocialStripView({
 function LeadCaptureCta({
   leadModule,
   theme,
+  lang = 'es',
   onOpen,
 }: {
   leadModule: LeadCaptureModule;
   theme: ThemePreferences;
+  lang?: SupportedLanguage;
   onOpen: () => void;
 }) {
   return (
@@ -273,7 +285,7 @@ function LeadCaptureCta({
       }}
     >
       <UserCheck className="w-4 h-4 text-sky-400" />
-      <span>{leadModule.buttonLabel || 'Intercambiar Contacto / Dejar mis Datos'}</span>
+      <span>{leadModule.buttonLabel || t('connectWith', lang)}</span>
       <Sparkles className="w-3.5 h-3.5 text-amber-400 ml-1" />
     </button>
   );
@@ -285,9 +297,11 @@ function LeadCaptureCta({
 function BusinessHoursView({
   hours,
   theme,
+  lang = 'es',
 }: {
   hours: BusinessHoursModule;
   theme: ThemePreferences;
+  lang?: SupportedLanguage;
 }) {
   // Compute current open/closed status
   const now = new Date();
@@ -315,7 +329,7 @@ function BusinessHoursView({
         <div className="flex items-center gap-2">
           <Clock className="w-4 h-4 text-sky-400" />
           <span className="text-xs font-bold uppercase tracking-wider opacity-80">
-            Horario de Atención
+            {t('businessHours', lang)}
           </span>
         </div>
 
@@ -332,7 +346,7 @@ function BusinessHoursView({
               isOpenNow ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'
             }`}
           />
-          {isOpenNow ? 'Abierto Ahora' : 'Cerrado Ahora'}
+          {isOpenNow ? t('openNow', lang) : t('closedNow', lang)}
         </span>
       </div>
 
@@ -349,10 +363,12 @@ function BusinessHoursView({
 function LocationView({
   loc,
   theme,
+  lang = 'es',
   onLinkClick,
 }: {
   loc: LocationModule;
   theme: ThemePreferences;
+  lang?: SupportedLanguage;
   onLinkClick?: (e: React.MouseEvent<HTMLAnchorElement>, url: string) => void;
 }) {
   const mapsUrl =
@@ -373,7 +389,7 @@ function LocationView({
       <div className="flex items-center gap-2">
         <MapPin className="w-4 h-4 text-rose-400" />
         <span className="text-xs font-bold uppercase tracking-wider opacity-80">
-          {loc.addressTitle || 'Ubicación & Sucursal'}
+          {loc.addressTitle || t('location', lang)}
         </span>
       </div>
 
@@ -392,7 +408,7 @@ function LocationView({
             className="flex-1 min-w-[130px] py-2 px-3 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all"
           >
             <Navigation className="w-3.5 h-3.5 text-sky-400" />
-            <span>Cómo llegar (Maps)</span>
+            <span>{t('viewOnMaps', lang)}</span>
           </a>
         )}
 
@@ -419,9 +435,11 @@ function LocationView({
 function BankDetailsView({
   bank,
   theme,
+  lang = 'es',
 }: {
   bank: BankDetailsModule;
   theme: ThemePreferences;
+  lang?: SupportedLanguage;
 }) {
   const [copiedClabe, setCopiedClabe] = useState(false);
 
@@ -451,7 +469,7 @@ function BankDetailsView({
         <div className="flex items-center gap-2">
           <Building2 className="w-4 h-4 text-emerald-400" />
           <span className="text-xs font-bold uppercase tracking-wider opacity-80">
-            Datos para Transferencia
+            {t('bankDetails', lang)}
           </span>
         </div>
         {bank.bankName && (
@@ -473,7 +491,7 @@ function BankDetailsView({
         <div className="p-2.5 rounded-xl bg-black/25 border border-white/10 flex items-center justify-between gap-2">
           <div className="min-w-0">
             <span className="text-[10px] uppercase opacity-60 font-bold block">
-              {bank.clabeNumber ? 'CLABE Interbancaria:' : 'Número de Cuenta:'}
+              {bank.clabeNumber ? `${t('clabe', lang)}:` : `${t('accountNumber', lang)}:`}
             </span>
             <span className="font-mono text-xs sm:text-sm font-bold tracking-wider truncate block">
               {bank.clabeNumber || bank.accountNumber}
@@ -489,7 +507,7 @@ function BankDetailsView({
             {copiedClabe ? (
               <>
                 <Check className="w-3.5 h-3.5" />
-                <span>¡Copiado!</span>
+                <span>{t('copied', lang)}</span>
               </>
             ) : (
               <>
@@ -516,11 +534,13 @@ function BankDetailsView({
 function CatalogView({
   catalog,
   theme,
+  lang = 'es',
   whatsappNumber,
   onLinkClick,
 }: {
   catalog: CatalogModule;
   theme: ThemePreferences;
+  lang?: SupportedLanguage;
   whatsappNumber?: string;
   onLinkClick?: (e: React.MouseEvent<HTMLAnchorElement>, url: string) => void;
 }) {
@@ -531,7 +551,7 @@ function CatalogView({
       <div className="flex items-center gap-2 px-1">
         <ShoppingBag className="w-4 h-4 text-amber-400" />
         <h4 className="text-xs font-bold uppercase tracking-wider opacity-85">
-          {catalog.sectionTitle || 'Servicios & Productos Destacados'}
+          {catalog.sectionTitle || t('catalog', lang)}
         </h4>
       </div>
 
@@ -585,7 +605,7 @@ function CatalogView({
                   className="inline-flex items-center gap-1.5 py-1 px-2.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold border border-emerald-500/30 transition-all"
                 >
                   <MessageCircle className="w-3 h-3 text-emerald-400" />
-                  <span>Pedir información por WhatsApp</span>
+                  <span>{t('inquire', lang)}</span>
                 </a>
               </div>
             </div>
@@ -602,10 +622,12 @@ function CatalogView({
 function TestimonialsView({
   testimonials,
   theme,
+  lang = 'es',
   onLinkClick,
 }: {
   testimonials: TestimonialsModule;
   theme: ThemePreferences;
+  lang?: SupportedLanguage;
   onLinkClick?: (e: React.MouseEvent<HTMLAnchorElement>, url: string) => void;
 }) {
   return (
@@ -614,7 +636,7 @@ function TestimonialsView({
         <div className="flex items-center gap-2">
           <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
           <h4 className="text-xs font-bold uppercase tracking-wider opacity-85">
-            Opiniones de Clientes
+            {t('testimonials', lang)}
           </h4>
         </div>
 
@@ -629,7 +651,7 @@ function TestimonialsView({
             style={{ color: theme.cardTextColor }}
           >
             <GoogleIcon className="w-3.5 h-3.5" />
-            <span>Calificar en Google</span>
+            <span>{t('seeOnGoogle', lang)}</span>
             <ExternalLink className="w-3 h-3 opacity-60" />
           </a>
         )}

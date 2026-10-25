@@ -18,6 +18,13 @@ export const PWAInstallBanner: React.FC = () => {
     }
   }, []);
 
+  // Do not show on shared public profile pages so visitors only see profile information
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+  const isManagementRoute = pathname === '/' || pathname.startsWith('/dashboard') || pathname.startsWith('/admin') || pathname.startsWith('/client');
+  if (!isManagementRoute) {
+    return null;
+  }
+
   // Do not show if already in standalone app, or dismissed, or neither installable nor iOS
   if (isInstalled || isDismissed || (!isInstallable && !isIOS)) {
     return null;

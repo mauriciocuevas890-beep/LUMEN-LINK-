@@ -151,6 +151,17 @@ export interface ProfileModulesConfig {
   testimonials?: TestimonialsModule;
   leadCapture?: LeadCaptureModule;
   videoEmbed?: VideoEmbedModule;
+  language?: ProfileLanguageConfig;
+}
+
+export type SupportedLanguage = 'es' | 'en' | 'pt' | 'fr';
+
+export interface ProfileLanguageConfig {
+  defaultLanguage: SupportedLanguage; // 'es' | 'en' | 'pt' | 'fr'
+  mode: 'fixed' | 'switcher'; // 'fixed': strictly in 1 language; 'switcher': visitor can switch with 1 click in top-left
+  availableLanguages?: SupportedLanguage[]; // e.g. ['es', 'en']
+  bioTranslations?: Partial<Record<SupportedLanguage, string>>;
+  sectionTranslations?: Record<string, Partial<Record<SupportedLanguage, string>>>;
 }
 
 export interface UserProfile {
@@ -168,9 +179,11 @@ export interface UserProfile {
   theme_preferences: ThemePreferences;
   vcard_details: VCardDetails;
   modules?: ProfileModulesConfig;
+  language?: ProfileLanguageConfig;
   capturedLeads?: LeadContactItem[];
   createdAt?: string;
   updatedAt?: string;
+  isOptimistic?: boolean;
 }
 
 export interface ClientProfile {
@@ -193,6 +206,7 @@ export interface ClientProfile {
   theme_preferences: ThemePreferences;
   vcard_details: VCardDetails;
   modules?: ProfileModulesConfig;
+  language?: ProfileLanguageConfig;
   capturedLeads?: LeadContactItem[];
   createdAt?: string;
   updatedAt?: string;

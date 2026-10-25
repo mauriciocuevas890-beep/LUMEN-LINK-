@@ -37,6 +37,7 @@ import {
   LogOut,
   Sliders,
   Video,
+  Languages,
 } from 'lucide-react';
 import { doc, getDoc, updateDoc, setDoc, collection, query, where, getDocs, addDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase/config';
@@ -44,13 +45,14 @@ import { useAuth } from '../context/AuthContext';
 import { LinkPresetsSelector } from '../components/LinkPresetsSelector';
 import { LinkPreset } from '../utils/linkPresets';
 import { VideoEmbedSettings } from '../components/VideoEmbedSettings';
-import { ClientProfile, UserProfile, LinkItem, ThemePreferences, VCardDetails, ProfileModulesConfig } from '../types';
+import { ClientProfile, UserProfile, LinkItem, ThemePreferences, VCardDetails, ProfileModulesConfig, ProfileLanguageConfig } from '../types';
 import { ProfileView } from '../components/ProfileView';
 import { PWAInstallButton } from '../components/PWAInstallButton';
 import { QRCodeGeneratorModal } from '../components/QRCodeModal';
 import { ImageDropzone } from '../components/ImageDropzone';
 import { BackgroundPresetsGallery } from '../components/BackgroundPresetsGallery';
 import { CustomDomainSettings } from '../components/CustomDomainSettings';
+import { LanguageSettingsEditor } from '../components/LanguageSettingsEditor';
 import { generateAndDownloadVCF, parseVCardString } from '../utils/vcard';
 import { CURATED_BACKGROUND_PRESETS, CURATED_CARD_TEMPLATES } from '../utils/imageUpload';
 import { getPublicProfileUrl, formatExternalUrl } from '../utils/urlHelper';
@@ -85,7 +87,7 @@ export function ClientPortalPage() {
 
   // View state: 'card' (interactive view) | 'editor' (100% editable settings)
   const [activeTab, setActiveTab] = useState<'card' | 'editor'>('card');
-  const [editorSection, setEditorSection] = useState<'media' | 'video' | 'info' | 'contact' | 'links' | 'appearance' | 'domain'>('media');
+  const [editorSection, setEditorSection] = useState<'media' | 'video' | 'info' | 'contact' | 'links' | 'appearance' | 'language' | 'domain'>('media');
 
   // Modals & previews
   const [showQRModal, setShowQRModal] = useState(false);
@@ -111,6 +113,11 @@ export function ClientPortalPage() {
   const [isPremium, setIsPremium] = useState(true);
   const [theme, setTheme] = useState<ThemePreferences>(THEME_PRESETS[0].theme);
   const [modules, setModules] = useState<ProfileModulesConfig | undefined>(undefined);
+  const [languageConfig, setLanguageConfig] = useState<ProfileLanguageConfig>({
+    defaultLanguage: 'es',
+    mode: 'fixed',
+    availableLanguages: ['es', 'en'],
+  });
   const [vcard, setVcard] = useState<VCardDetails>({
     enabled: true,
     showQuickCall: true,
@@ -404,6 +411,13 @@ export function ClientPortalPage() {
         setIsPremium(resolvedClientData.isPremium ?? true);
         setTheme(resolvedClientData.theme_preferences || THEME_PRESETS[0].theme);
         setModules(resolvedClientData.modules);
+        if (resolvedClientData.language) {
+          setLanguageConfig(resolvedClientData.language);
+        } else if (resolvedClientData.modules?.language) {
+          setLanguageConfig(resolvedClientData.modules.language);
+        } else {
+          setLanguageConfig({ defaultLanguage: 'es', mode: 'fixed', availableLanguages: ['es', 'en'] });
+        }
         setVcard(
           resolvedClientData.vcard_details
             ? {
@@ -476,7 +490,11 @@ export function ClientPortalPage() {
       ...vcard,
       fullName: displayName || clientName || 'Contacto',
     },
-    modules: modules,
+    language: languageConfig,
+    modules: {
+      ...(modules || {}),
+      language: languageConfig,
+    },
   };
 
   // Save all profile changes
@@ -493,6 +511,11 @@ export function ClientPortalPage() {
         company: vcard.company?.trim() || clientName.trim(),
       };
 
+      const updatedModules: ProfileModulesConfig = {
+        ...(modules || {}),
+        language: languageConfig,
+      };
+
       const targetCol = sourceCollection;
       const docRef = doc(db, targetCol, profileData.id);
       const payload = cleanFirestoreData({
@@ -504,7 +527,8 @@ export function ClientPortalPage() {
         isPremium,
         theme_preferences: theme,
         vcard_details: updatedVcard,
-        modules: cleanFirestoreData(modules || {}),
+        language: languageConfig,
+        modules: cleanFirestoreData(updatedModules),
         updatedAt: new Date().toISOString(),
       });
 
@@ -538,7 +562,8 @@ export function ClientPortalPage() {
               avatarUrl: avatarUrl.trim(),
               theme_preferences: theme,
               vcard_details: updatedVcard,
-              modules: modules,
+              language: languageConfig,
+              modules: updatedModules,
             }
           : null
       );
@@ -551,6 +576,37 @@ export function ClientPortalPage() {
       setTimeout(() => setSaveError(null), 5000);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Instant save for Language configuration in Portal
+  const handleSaveLanguage = async (newConfig: ProfileLanguageConfig) => {
+    setLanguageConfig(newConfig);
+    const updatedModules: ProfileModulesConfig = {
+      ...(modules || {}),
+      language: newConfig,
+    };
+    setModules(updatedModules);
+
+    if (!profileData) return;
+    try {
+      const docRef = doc(db, sourceCollection, profileData.id);
+      await setDoc(
+        docRef,
+        cleanFirestoreData({
+          language: newConfig,
+          modules: cleanFirestoreData(updatedModules),
+          updatedAt: new Date().toISOString(),
+        }),
+        { merge: true }
+      );
+      setProfileData((prev) => (prev ? { ...prev, language: newConfig, modules: updatedModules } : null));
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } catch (err) {
+      console.error('Error auto-saving language in portal:', err);
+      setSaveError('No se pudo guardar la configuración de idioma.');
+      setTimeout(() => setSaveError(null), 4000);
     }
   };
 
@@ -1226,6 +1282,7 @@ export function ClientPortalPage() {
                   { id: 'contact', label: 'Contacto (vCard)', icon: Phone },
                   { id: 'links', label: 'Enlaces', icon: Globe },
                   { id: 'appearance', label: 'Estilo', icon: Palette },
+                  { id: 'language', label: 'Idioma', icon: Languages },
                   { id: 'domain', label: 'Dominio Propio', icon: Server, isPro: true },
                 ].map((sec) => {
                   const Icon = sec.icon;
@@ -1976,6 +2033,17 @@ export function ClientPortalPage() {
                 </div>
               )}
 
+              {/* SECTION: IDIOMA */}
+              {editorSection === 'language' && (
+                <LanguageSettingsEditor
+                  languageConfig={languageConfig}
+                  onSaveLanguage={handleSaveLanguage}
+                  accentColor={theme.accentColor}
+                  currentBio={bio}
+                  sectionNames={Array.from(new Set(links.map((l) => l.group_name?.trim()).filter(Boolean))) as string[]}
+                />
+              )}
+
               {/* SECTION: DOMINIO PERSONALIZADO (WHITE-LABEL PREMIUM) */}
               {editorSection === 'domain' && (
                 <CustomDomainSettings
@@ -2293,3 +2361,5 @@ export function ClientPortalPage() {
     </div>
   );
 }
+
+export default ClientPortalPage;
