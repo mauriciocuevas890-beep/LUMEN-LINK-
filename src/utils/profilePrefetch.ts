@@ -274,28 +274,34 @@ export async function prefetchProfileData(rawUsername: string): Promise<CachedPr
       const links: LinkItem[] = [];
       try {
         const linksRef = collection(db, 'links');
-        let linksQuery;
+
+        // Priority 1: Query by profileId
         if (profileId && profileId !== 'main') {
-          linksQuery = query(linksRef, where('profileId', '==', profileId));
-        } else if (userUid && userUid !== 'client') {
-          linksQuery = query(linksRef, where('uid', '==', userUid));
+          const pSnap = await getDocs(query(linksRef, where('profileId', '==', profileId)));
+          pSnap.forEach((d) => {
+            links.push({ id: d.id, ...(d.data() as Omit<LinkItem, 'id'>) });
+          });
         }
 
-        if (linksQuery) {
-          const linksSnap = await getDocs(linksQuery);
-          linksSnap.forEach((d) => {
+        // Priority 2: Fallback query by userUid
+        if (links.length === 0 && userUid && userUid !== 'client') {
+          const uSnap = await getDocs(query(linksRef, where('uid', '==', userUid)));
+          uSnap.forEach((d) => {
             const data = d.data() as Omit<LinkItem, 'id'>;
+            const linkProfileId = data.profileId || 'main';
             if (profileId && profileId !== 'main') {
-              links.push({ id: d.id, ...data });
+              if (linkProfileId === profileId) {
+                links.push({ id: d.id, ...data });
+              }
             } else {
-              const linkProfileId = data.profileId || 'main';
               if (linkProfileId === 'main') {
                 links.push({ id: d.id, ...data });
               }
             }
           });
-          links.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         }
+
+        links.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
       } catch (linkErr) {
         console.warn('Prefetch links error:', linkErr);
       }

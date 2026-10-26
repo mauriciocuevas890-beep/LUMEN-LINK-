@@ -62,6 +62,7 @@ interface ProfileViewProps {
   onEditAvatar?: () => void;
   onEditCardTemplate?: () => void;
   onEditBackground?: () => void;
+  isLinksLoading?: boolean;
 }
 
 export function ProfileView({
@@ -71,6 +72,7 @@ export function ProfileView({
   onEditAvatar,
   onEditCardTemplate,
   onEditBackground,
+  isLinksLoading = false,
 }: ProfileViewProps) {
   const [copied, setCopied] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
@@ -821,7 +823,7 @@ export function ProfileView({
         })}
 
           {/* Optimistic UI Placeholder for Links while live database stream connects */}
-          {profile.isOptimistic && activeLinks.length === 0 && (
+          {(profile.isOptimistic || isLinksLoading) && activeLinks.length === 0 && (
             <div className="space-y-3 w-full animate-pulse pt-1">
               {[1, 2, 3].map((index) => (
                 <div
@@ -847,7 +849,7 @@ export function ProfileView({
           )}
 
           {/* Empty State when confirmed loaded and genuinely has no links */}
-          {!profile.isOptimistic && activeLinks.length === 0 && (
+          {!profile.isOptimistic && !isLinksLoading && activeLinks.length === 0 && (
             <div
               className="py-12 px-6 rounded-2xl border border-dashed text-center opacity-60"
               style={{

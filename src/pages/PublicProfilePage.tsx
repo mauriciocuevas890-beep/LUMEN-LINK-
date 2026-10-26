@@ -49,6 +49,11 @@ export function PublicProfilePage() {
     return [];
   });
 
+  // Track whether links have completed their initial network or cache resolution
+  const [linksLoading, setLinksLoading] = useState<boolean>(() => {
+    return !initialCache;
+  });
+
   // Never block with a cold white or empty screen when optimistic or cached data is available
   const [loading, setLoading] = useState<boolean>(() => {
     return !initialCache && !initialOptimistic;
@@ -289,9 +294,63 @@ export function PublicProfilePage() {
         }
 
         userUid = userUid || loadedProfile.uid || 'public';
-        setProfile(loadedProfile);
 
-        // Step 5: Real-time onSnapshot listener for the active profile document
+        // Step 5: Fast initial fetch of profile links before releasing optimistic state
+        // This eliminates the premature "No hay enlaces publicados todavía" flash
+        const linksRef = collection(db, 'links');
+        const initialLinks: LinkItem[] = [];
+
+        try {
+          // Priority 1: Direct lookup by profileId for client profiles
+          if (profileId && profileId !== 'main') {
+            const pSnap = await getDocs(query(linksRef, where('profileId', '==', profileId)));
+            pSnap.forEach((d) => {
+              initialLinks.push({ id: d.id, ...(d.data() as Omit<LinkItem, 'id'>) });
+            });
+          }
+
+          // Priority 2: Fallback lookup by userUid
+          if (initialLinks.length === 0 && userUid && userUid !== 'client') {
+            const uSnap = await getDocs(query(linksRef, where('uid', '==', userUid)));
+            uSnap.forEach((d) => {
+              const data = d.data() as Omit<LinkItem, 'id'>;
+              const linkProfileId = data.profileId || 'main';
+              if (profileId && profileId !== 'main') {
+                if (linkProfileId === profileId) {
+                  initialLinks.push({ id: d.id, ...data });
+                }
+              } else {
+                if (linkProfileId === 'main') {
+                  initialLinks.push({ id: d.id, ...data });
+                }
+              }
+            });
+          }
+
+          initialLinks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        } catch (fetchLinksErr) {
+          console.warn('Initial links getDocs warning:', fetchLinksErr);
+        }
+
+        // Atomically update both profile and links in the same render tick
+        setLinks(initialLinks);
+        setProfile(loadedProfile);
+        setLinksLoading(false);
+        setLastUpdated(new Date());
+
+        // Store immediately in ultra-fast memory & persistent cache
+        if (loadedProfile && docSource) {
+          persistProfileCache(cleanUsername, {
+            profile: loadedProfile,
+            links: initialLinks,
+            docSource,
+            userUid: userUid || 'client',
+            profileId,
+            timestamp: Date.now(),
+          });
+        }
+
+        // Step 6: Real-time onSnapshot listener for the active profile document
         try {
           if (docSource === 'profiles' && profileId) {
             const profileDocRef = doc(db, 'profiles', profileId);
@@ -343,9 +402,8 @@ export function PublicProfilePage() {
           console.warn('Error setting up profile snapshot listener:', subErr);
         }
 
-        // Step 6: Real-time onSnapshot listener for profile links
+        // Step 7: Real-time onSnapshot listener for live link updates
         try {
-          const linksRef = collection(db, 'links');
           let linksQuery;
 
           if (profileId && profileId !== 'main') {
@@ -373,9 +431,10 @@ export function PublicProfilePage() {
 
                 fetchedLinks.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
                 setLinks(fetchedLinks);
+                setLinksLoading(false);
                 setLastUpdated(new Date());
 
-                // Store in fast memory & persistent cache for instant subsequent visits
+                // Keep cache refreshed with live updates
                 if (loadedProfile && docSource) {
                   persistProfileCache(cleanUsername, {
                     profile: loadedProfile,
@@ -389,14 +448,14 @@ export function PublicProfilePage() {
               },
               (err) => {
                 console.warn('Real-time links listener notice (handled):', err);
+                setLinksLoading(false);
               }
             );
           }
         } catch (linkErr) {
-          console.warn('Error fetching profile links (profile still displayed):', linkErr);
+          console.warn('Error setting up links snapshot listener:', linkErr);
+          setLinksLoading(false);
         }
-
-        setLastUpdated(new Date());
       } catch (err) {
         console.error('Error fetching public profile:', err);
         if (!isRefresh && (!profile || profile.isOptimistic)) {
@@ -470,7 +529,7 @@ export function PublicProfilePage() {
       lastUpdated={lastUpdated}
       className="min-h-screen w-full relative"
     >
-      <ProfileView profile={profile} links={links} isPreview={false} />
+      <ProfileView profile={profile} links={links} isPreview={false} isLinksLoading={linksLoading} />
     </PullToRefresh>
   );
 }
