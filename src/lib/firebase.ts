@@ -5,8 +5,7 @@ import {
   getFirestore,
   doc,
   getDocFromServer,
-  persistentLocalCache,
-  persistentMultipleTabManager,
+  memoryLocalCache,
 } from 'firebase/firestore';
 import firebaseLocalConfig from '../../firebase-applet-config.json';
 
@@ -24,7 +23,8 @@ export const firebaseConfig = {
 // Initialize Firebase App as a singleton
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize Firestore with auto-detect long polling and multi-tab persistent cache for rock-solid mobile and offline support
+// Initialize Firestore with fast auto-detect long polling and memory cache
+// Avoids iOS Safari persistentMultipleTabManager lock contention that requires page refresh
 export const db = (() => {
   const databaseId =
     firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
@@ -36,9 +36,7 @@ export const db = (() => {
       app,
       {
         experimentalAutoDetectLongPolling: true,
-        localCache: persistentLocalCache({
-          tabManager: persistentMultipleTabManager(),
-        }),
+        localCache: memoryLocalCache(),
       },
       databaseId
     );

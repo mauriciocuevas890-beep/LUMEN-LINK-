@@ -87,6 +87,11 @@ export function PublicProfilePage() {
 
   const unsubProfileRef = useRef<Unsubscribe | null>(null);
   const unsubLinksRef = useRef<Unsubscribe | null>(null);
+  const profileRef = useRef<UserProfile | null>(profile);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   const cleanupListeners = useCallback(() => {
     if (unsubProfileRef.current) {
@@ -130,8 +135,8 @@ export function PublicProfilePage() {
         return;
       }
 
-      // If user pulled to refresh, keep current view while fetching
-      if (!isRefresh && !profile) {
+      // If user pulled to refresh or has no cache, keep current view while fetching
+      if (!isRefresh && (!profileRef.current || profileRef.current.isOptimistic)) {
         setLoading(true);
       }
 
@@ -308,6 +313,31 @@ export function PublicProfilePage() {
           }
         }
 
+        // Step 4b: Fallback scan across users collection in case of casing or displayName matching
+        if (!loadedProfile) {
+          try {
+            const allUsersSnap = await getDocs(collection(db, 'users'));
+            for (const docSnap of allUsersSnap.docs) {
+              const uData = docSnap.data() as UserProfile;
+              const u = (uData.username || '').toLowerCase().trim();
+              const dn = (uData.displayName || '').toLowerCase().trim();
+
+              if (u === cleanUsername || docSnap.id.toLowerCase() === cleanUsername || (dn && dn === cleanUsername)) {
+                userUid = uData.uid || docSnap.id;
+                docSource = 'users';
+                loadedProfile = {
+                  ...uData,
+                  uid: userUid,
+                  username: uData.username || cleanUsername,
+                };
+                break;
+              }
+            }
+          } catch (e) {
+            console.warn('Users collection fallback scan error:', e);
+          }
+        }
+
         if (!loadedProfile) {
           if (!isRefresh) {
             setNotFound(true);
@@ -480,7 +510,7 @@ export function PublicProfilePage() {
         }
       } catch (err) {
         console.error('Error fetching public profile:', err);
-        if (!isRefresh && (!profile || profile.isOptimistic)) {
+        if (!isRefresh && (!profileRef.current || profileRef.current.isOptimistic)) {
           setNotFound(true);
         }
       } finally {
@@ -489,7 +519,7 @@ export function PublicProfilePage() {
         }
       }
     },
-    [cleanUsername, navigate, cleanupListeners, profile]
+    [cleanUsername, navigate, cleanupListeners]
   );
 
   useEffect(() => {
