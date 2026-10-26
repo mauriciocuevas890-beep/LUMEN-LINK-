@@ -37,17 +37,6 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.warn('ErrorBoundary captured rendering error:', error, errorInfo);
-
-    // If it's a chunk error from a new deploy, attempt automatic reload once
-    if (this.state.isChunkError) {
-      const lastReload = sessionStorage.getItem('chunk_reload_timestamp');
-      const now = Date.now();
-      // Allow 1 auto-reload every 15 seconds
-      if (!lastReload || now - parseInt(lastReload, 10) > 15000) {
-        sessionStorage.setItem('chunk_reload_timestamp', now.toString());
-        window.location.reload();
-      }
-    }
   }
 
   private handleRetry = () => {

@@ -10,7 +10,7 @@ export default defineConfig(() => {
       react(),
       tailwindcss(),
       VitePWA({
-        registerType: 'autoUpdate',
+        registerType: 'prompt',
         includeAssets: [
           'logo.png',
           'apple-touch-icon.png',
@@ -60,10 +60,9 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          navigateFallback: '/index.html',
-          skipWaiting: true,
-          clientsClaim: true,
+          // Exclude HTML so iPhone browsers always receive the fresh page directly
+          // without serving a stale version and triggering auto-reload
+          globPatterns: ['**/*.{js,css,ico,png,svg,woff,woff2}'],
           cleanupOutdatedCaches: true,
           runtimeCaching: [
             {
