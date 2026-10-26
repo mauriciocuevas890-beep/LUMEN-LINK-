@@ -32,18 +32,20 @@ export function sanitizeUsername(raw: string): string {
   return decoded.replace(/^@/, '').toLowerCase().trim();
 }
 
-// 2. Synchronous optimistic/stale cache reader (0ms latency)
+import { getIdbProfile, setIdbProfile } from './localProfileDb';
+
+// 2. Synchronous optimistic/stale cache reader (0ms latency from RAM or localStorage)
 export function getCachedProfileSync(rawUsername: string): CachedProfileEntry | null {
   const clean = sanitizeUsername(rawUsername);
   if (!clean) return null;
 
-  // Check in-memory store first
+  // Check in-memory store first (Tier 1: 0ms RAM)
   const memoryHit = memoryStore.get(clean);
   if (memoryHit) {
     return memoryHit;
   }
 
-  // Check persistent browser storage (sessionStorage / localStorage)
+  // Check persistent browser storage (Tier 2: localStorage / sessionStorage)
   try {
     const raw = sessionStorage.getItem(`${CACHE_PREFIX}${clean}`) || localStorage.getItem(`${CACHE_PREFIX}${clean}`);
     if (raw) {
@@ -60,21 +62,56 @@ export function getCachedProfileSync(rawUsername: string): CachedProfileEntry | 
   return null;
 }
 
-// 3. Save profile and links into both memory and persistent storage
+// 2b. Asynchronous Tiered cache reader (RAM -> localStorage -> IndexedDB)
+export async function getCachedProfileAsync(rawUsername: string): Promise<CachedProfileEntry | null> {
+  const syncHit = getCachedProfileSync(rawUsername);
+  if (syncHit) return syncHit;
+
+  const clean = sanitizeUsername(rawUsername);
+  if (!clean) return null;
+
+  try {
+    // Check IndexedDB (Tier 3: High-capacity persistent offline store on iOS)
+    const idbHit = await getIdbProfile(clean);
+    if (idbHit && idbHit.profile) {
+      // Rehydrate memory store & localStorage for instant synchronous access
+      memoryStore.set(clean, idbHit);
+      try {
+        localStorage.setItem(`${CACHE_PREFIX}${clean}`, JSON.stringify(idbHit));
+      } catch (_) {}
+      return idbHit;
+    }
+  } catch (idbErr) {
+    console.warn('IndexedDB read fallback notice:', idbErr);
+  }
+
+  return null;
+}
+
+// 3. Save profile and links into all tiers: Memory (L1), localStorage (L2), and IndexedDB (L3)
 export function persistProfileCache(cleanUsername: string, entry: CachedProfileEntry): void {
   const clean = sanitizeUsername(cleanUsername);
   if (!clean || !entry.profile) return;
 
+  // Tier 1: In-memory store
   memoryStore.set(clean, entry);
 
+  // Tier 2: localStorage & sessionStorage with quota safeguards
   try {
     const serialized = JSON.stringify(entry);
     sessionStorage.setItem(`${CACHE_PREFIX}${clean}`, serialized);
-    // Keep in localStorage for fast repeat NFC scans & WhatsApp link clicks
     localStorage.setItem(`${CACHE_PREFIX}${clean}`, serialized);
   } catch (e) {
-    // Quota or private mode fallback
-    console.warn('Cache persist warning:', e);
+    console.warn('Storage quota warning (IndexedDB handles large payloads):', e);
+  }
+
+  // Tier 3: IndexedDB persistent database (No 5MB quota limit, preserves data on iOS)
+  try {
+    setIdbProfile(clean, entry).catch((err) => {
+      console.warn('Background IndexedDB write notice:', err);
+    });
+  } catch (idbErr) {
+    console.warn('IndexedDB put exception:', idbErr);
   }
 }
 

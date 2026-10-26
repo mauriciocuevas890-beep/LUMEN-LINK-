@@ -224,10 +224,6 @@ export function downloadVCard(
     const vcardContent = generateVCardString(target, options);
     const cardData = extractCardData(target, options);
 
-    // Create UTF-8 encoded Blob with standard MIME type
-    const blob = new Blob([vcardContent], { type: 'text/vcard;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-
     const baseName =
       options.customFilename ||
       cardData.username ||
@@ -242,6 +238,40 @@ export function downloadVCard(
       .replace(/_+/g, '_');
 
     const filename = `${safeName}.vcf`;
+
+    const isIOS =
+      typeof navigator !== 'undefined' &&
+      (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+    if (isIOS) {
+      // iOS Safari ignores the download attribute on blob URLs and fails to trigger
+      // the native "Add to Contacts" (Añadir a Contactos) sheet.
+      // A data:text/vcard URI opens directly into the Apple Contacts sheet.
+      const encodedVcard = encodeURIComponent(vcardContent);
+      const dataUri = `data:text/vcard;charset=utf-8,${encodedVcard}`;
+
+      const link = document.createElement('a');
+      link.href = dataUri;
+      link.setAttribute('download', filename);
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      // WebKit WebView fallback (Instagram, WhatsApp, TikTok browser)
+      setTimeout(() => {
+        try {
+          window.location.href = dataUri;
+        } catch (_) {}
+      }, 120);
+
+      return true;
+    }
+
+    // Standard Android / Desktop browser Blob download
+    const blob = new Blob([vcardContent], { type: 'text/vcard;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
 
     const link = document.createElement('a');
     link.href = url;

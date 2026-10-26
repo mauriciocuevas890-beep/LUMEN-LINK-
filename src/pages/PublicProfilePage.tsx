@@ -10,6 +10,7 @@ import { Compass } from 'lucide-react';
 import {
   sanitizeUsername,
   getCachedProfileSync,
+  getCachedProfileAsync,
   createOptimisticProfile,
   persistProfileCache,
   prefetchProfileData,
@@ -62,6 +63,25 @@ export function PublicProfilePage() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(() => {
     return initialCache ? new Date(initialCache.timestamp) : null;
   });
+
+  // Persistent IndexedDB Layer (Tier 3): Instant cache hydration on iOS if not in memory/localStorage
+  useEffect(() => {
+    if (!initialCache && cleanUsername) {
+      let isMounted = true;
+      getCachedProfileAsync(cleanUsername).then((idbHit) => {
+        if (isMounted && idbHit && idbHit.profile) {
+          setProfile(idbHit.profile);
+          setLinks(idbHit.links || []);
+          setLinksLoading(false);
+          setLoading(false);
+          setLastUpdated(new Date(idbHit.timestamp));
+        }
+      });
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [cleanUsername, initialCache]);
 
   const unsubProfileRef = useRef<Unsubscribe | null>(null);
   const unsubLinksRef = useRef<Unsubscribe | null>(null);

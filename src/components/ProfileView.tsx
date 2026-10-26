@@ -214,8 +214,11 @@ export function ProfileView({
         setCopied(true);
         setTimeout(() => setCopied(false), 2500);
         return;
-      } catch (err) {
-        // User cancelled or share failed, fallback to clipboard
+      } catch (err: any) {
+        // If user cancelled on iOS, exit cleanly without copying or showing toast
+        if (err?.name === 'AbortError') {
+          return;
+        }
       }
     }
 
@@ -999,7 +1002,7 @@ export function ProfileView({
           </div>
         )}
 
-        <div className="pb-8" />
+        <div className="pb-8" style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 2rem))' }} />
       </div>
       </div>
 

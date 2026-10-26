@@ -61,7 +61,7 @@ export function parseVideoUrl(rawUrl?: string): ParsedVideoInfo {
 
     return {
       isValid: true,
-      embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1`,
+      embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&playsinline=1`,
       platform: 'youtube',
       isLiveDetected: isLive,
       isShorts: isShorts,
@@ -91,7 +91,7 @@ export function parseVideoUrl(rawUrl?: string): ParsedVideoInfo {
     const vimeoId = vimeoMatch[3];
     return {
       isValid: true,
-      embedUrl: `https://player.vimeo.com/video/${vimeoId}?color=38bdf8&title=0&byline=0&portrait=0`,
+      embedUrl: `https://player.vimeo.com/video/${vimeoId}?color=38bdf8&title=0&byline=0&portrait=0&playsinline=1`,
       platform: 'vimeo',
       isLiveDetected: false,
       isShorts: false,

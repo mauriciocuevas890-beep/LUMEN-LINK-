@@ -118,7 +118,7 @@ export function LeadCaptureModal({
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Ej. Carlos Hernández"
-                    className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-sky-500"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
@@ -135,7 +135,7 @@ export function LeadCaptureModal({
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="+52 33 1234 5678"
-                    className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-sky-500"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
@@ -151,7 +151,7 @@ export function LeadCaptureModal({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="carlos@ejemplo.com"
-                    className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-sky-500"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
@@ -167,7 +167,7 @@ export function LeadCaptureModal({
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                     placeholder="Ej. Nos conocimos en el evento de networking..."
-                    className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs sm:text-sm text-white focus:outline-none focus:border-sky-500"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-base sm:text-sm text-white focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
