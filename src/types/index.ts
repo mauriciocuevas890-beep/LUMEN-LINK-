@@ -233,3 +233,13 @@ export interface UsernameDoc {
   username: string;
   createdAt: string;
 }
+
+export interface CachedProfileEntry {
+  profile: UserProfile;
+  links: LinkItem[];
+  docSource: 'profiles' | 'users';
+  userUid: string;
+  profileId: string | null;
+  timestamp: number;
+}
+

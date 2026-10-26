@@ -1,15 +1,9 @@
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase/config';
-import { UserProfile, LinkItem, ClientProfile, ThemePreferences } from '../types';
+import { UserProfile, LinkItem, ClientProfile, ThemePreferences, CachedProfileEntry } from '../types';
+import { getIdbProfile, setIdbProfile } from './localProfileDb';
 
-export interface CachedProfileEntry {
-  profile: UserProfile;
-  links: LinkItem[];
-  docSource: 'profiles' | 'users';
-  userUid: string;
-  profileId: string | null;
-  timestamp: number;
-}
+export type { CachedProfileEntry };
 
 const CACHE_PREFIX = 'lumen_profile_v2_';
 const CACHE_TTL_MS = 1000 * 60 * 30; // 30 minutes TTL for fresh cache
@@ -31,8 +25,6 @@ export function sanitizeUsername(raw: string): string {
   }
   return decoded.replace(/^@/, '').toLowerCase().trim();
 }
-
-import { getIdbProfile, setIdbProfile } from './localProfileDb';
 
 // 2. Synchronous optimistic/stale cache reader (0ms latency from RAM or localStorage)
 export function getCachedProfileSync(rawUsername: string): CachedProfileEntry | null {

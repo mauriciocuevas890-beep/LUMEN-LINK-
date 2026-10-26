@@ -1,4 +1,4 @@
-import { CachedProfileEntry } from './profilePrefetch';
+import { CachedProfileEntry } from '../types';
 
 const DB_NAME = 'lumen_profiles_db';
 const DB_VERSION = 1;
@@ -6,6 +6,7 @@ const STORE_NAME = 'profiles';
 
 /**
  * Opens or initializes the IndexedDB store for long-term profile persistence on iOS / Android.
+ * Contains strict timeout safeguard to prevent Safari hanging in Private Mode.
  */
 function openDatabase(): Promise<IDBDatabase | null> {
   if (typeof window === 'undefined' || !('indexedDB' in window)) {
@@ -13,6 +14,17 @@ function openDatabase(): Promise<IDBDatabase | null> {
   }
 
   return new Promise((resolve) => {
+    let resolved = false;
+
+    // In iOS Safari Private Browsing or restricted WebViews, indexedDB.open() can hang indefinitely.
+    // Timeout safeguard ensures the app NEVER stalls.
+    const safetyTimer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve(null);
+      }
+    }, 350);
+
     try {
       const request = window.indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -22,27 +34,38 @@ function openDatabase(): Promise<IDBDatabase | null> {
           if (!db.objectStoreNames.contains(STORE_NAME)) {
             db.createObjectStore(STORE_NAME, { keyPath: 'cleanUsername' });
           }
-        } catch (upgradeErr) {
-          console.warn('IndexedDB upgrade error:', upgradeErr);
-        }
+        } catch (_) {}
       };
 
       request.onsuccess = () => {
-        resolve(request.result);
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(safetyTimer);
+          resolve(request.result);
+        }
       };
 
-      request.onerror = (e) => {
-        console.warn('IndexedDB open error (handling gracefully):', e);
-        resolve(null);
+      request.onerror = () => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(safetyTimer);
+          resolve(null);
+        }
       };
 
       request.onblocked = () => {
-        console.warn('IndexedDB open blocked by another tab');
-        resolve(null);
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(safetyTimer);
+          resolve(null);
+        }
       };
-    } catch (err) {
-      console.warn('IndexedDB access exception (e.g. private mode restriction):', err);
-      resolve(null);
+    } catch (_) {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(safetyTimer);
+        resolve(null);
+      }
     }
   });
 }

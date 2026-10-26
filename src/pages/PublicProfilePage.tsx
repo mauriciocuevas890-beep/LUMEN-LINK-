@@ -68,15 +68,17 @@ export function PublicProfilePage() {
   useEffect(() => {
     if (!initialCache && cleanUsername) {
       let isMounted = true;
-      getCachedProfileAsync(cleanUsername).then((idbHit) => {
-        if (isMounted && idbHit && idbHit.profile) {
-          setProfile(idbHit.profile);
-          setLinks(idbHit.links || []);
-          setLinksLoading(false);
-          setLoading(false);
-          setLastUpdated(new Date(idbHit.timestamp));
-        }
-      });
+      getCachedProfileAsync(cleanUsername)
+        .then((idbHit) => {
+          if (isMounted && idbHit && idbHit.profile) {
+            setProfile(idbHit.profile);
+            setLinks(idbHit.links || []);
+            setLinksLoading(false);
+            setLoading(false);
+            setLastUpdated(new Date(idbHit.timestamp));
+          }
+        })
+        .catch(() => {});
       return () => {
         isMounted = false;
       };
