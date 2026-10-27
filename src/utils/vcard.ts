@@ -244,52 +244,68 @@ export function downloadVCard(
       (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 
-    if (isIOS) {
-      // iOS Safari ignores the download attribute on blob URLs and fails to trigger
-      // the native "Add to Contacts" (Añadir a Contactos) sheet.
-      // A data:text/vcard URI opens directly into the Apple Contacts sheet.
-      const encodedVcard = encodeURIComponent(vcardContent);
-      const dataUri = `data:text/vcard;charset=utf-8,${encodedVcard}`;
-
-      const link = document.createElement('a');
-      link.href = dataUri;
-      link.setAttribute('download', filename);
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      // WebKit WebView fallback (Instagram, WhatsApp, TikTok browser)
-      setTimeout(() => {
-        try {
-          window.location.href = dataUri;
-        } catch (_) {}
-      }, 120);
-
-      return true;
+    // Priority 1: Web Share API with File (Native Apple Contacts Sheet on iOS 15+)
+    // Directly opens the native "Crear nuevo contacto / Añadir a contactos" sheet on iPhone
+    if (typeof navigator !== 'undefined' && typeof File !== 'undefined' && typeof navigator.canShare === 'function') {
+      try {
+        const file = new File([vcardContent], filename, { type: 'text/vcard;charset=utf-8' });
+        if (navigator.canShare({ files: [file] })) {
+          navigator.share({
+            files: [file],
+            title: cardData.fullName || 'Contacto',
+          }).catch((shareErr) => {
+            if (shareErr?.name !== 'AbortError') {
+              console.warn('vCard file share rejected, fallback to direct download:', shareErr);
+              triggerBlobDownload(vcardContent, filename, isIOS);
+            }
+          });
+          return true;
+        }
+      } catch (shareCheckErr) {
+        console.warn('vCard share with file exception:', shareCheckErr);
+      }
     }
 
-    // Standard Android / Desktop browser Blob download
-    const blob = new Blob([vcardContent], { type: 'text/vcard;charset=utf-8;' });
+    // Priority 2: Standard same-origin Blob download with iOS Safari support
+    triggerBlobDownload(vcardContent, filename, isIOS);
+    return true;
+  } catch (error) {
+    console.error('Error generating or downloading standard .vcf file:', error);
+    return false;
+  }
+}
+
+/**
+ * Triggers standard browser Blob download for .vcf file with iOS Safari compatibility
+ */
+function triggerBlobDownload(vcardContent: string, filename: string, isIOS: boolean): void {
+  try {
+    const blob = new Blob([vcardContent], { type: 'text/vcard;charset=utf-8' });
     const url = URL.createObjectURL(blob);
 
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', filename);
-    link.style.display = 'none';
+    link.setAttribute('target', '_blank');
+    link.rel = 'noopener';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
-    // Clean up memory
+    // On iOS Safari, if synthetic click was intercepted, direct location assign triggers download prompt
+    if (isIOS) {
+      setTimeout(() => {
+        try {
+          window.location.assign(url);
+        } catch (_) {}
+      }, 100);
+    }
+
     setTimeout(() => {
       URL.revokeObjectURL(url);
-    }, 1500);
-
-    return true;
-  } catch (error) {
-    console.error('Error generating or downloading standard .vcf file:', error);
-    return false;
+    }, 4000);
+  } catch (err) {
+    console.error('triggerBlobDownload error:', err);
   }
 }
 

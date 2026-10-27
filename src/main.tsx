@@ -3,7 +3,6 @@ import {createRoot} from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import './index.css';
-import { initEarlyProfilePrefetch } from './utils/profilePrefetch';
 
 // Clean up any legacy stale caches from earlier autoUpdate loops
 if (typeof window !== 'undefined' && 'caches' in window) {
@@ -28,9 +27,6 @@ registerSW({
     // Ready offline
   },
 });
-
-// Trigger instantaneous prefetch of public profile if visiting a profile URL
-initEarlyProfilePrefetch();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

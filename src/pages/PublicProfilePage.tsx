@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, getDocs, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, limit, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { UserProfile, LinkItem, ClientProfile } from '../types';
 import { ProfileView } from '../components/ProfileView';
@@ -11,9 +11,7 @@ import {
   sanitizeUsername,
   getCachedProfileSync,
   getCachedProfileAsync,
-  createOptimisticProfile,
   persistProfileCache,
-  prefetchProfileData,
 } from '../utils/profilePrefetch';
 
 export function PublicProfilePage() {
@@ -33,21 +31,15 @@ export function PublicProfilePage() {
 
   const cleanUsername = sanitizeUsername(targetUsername);
 
-  // Synchronous optimistic initialization:
-  // 1. Instant Cache hit (from memory, sessionStorage or localStorage)
-  // 2. Optimistic Profile shell (with @username and placeholder theme)
+  // Synchronous cache hit (from memory, sessionStorage or localStorage)
   const initialCache = cleanUsername ? getCachedProfileSync(cleanUsername) : null;
-  const initialOptimistic = cleanUsername && !initialCache ? createOptimisticProfile(cleanUsername) : null;
 
   const [profile, setProfile] = useState<UserProfile | null>(() => {
-    if (initialCache) return initialCache.profile;
-    if (initialOptimistic) return initialOptimistic;
-    return null;
+    return initialCache ? initialCache.profile : null;
   });
 
   const [links, setLinks] = useState<LinkItem[]>(() => {
-    if (initialCache) return initialCache.links;
-    return [];
+    return initialCache ? initialCache.links : [];
   });
 
   // Track whether links have completed their initial network or cache resolution
@@ -55,9 +47,9 @@ export function PublicProfilePage() {
     return !initialCache;
   });
 
-  // Never block with a cold white or empty screen when optimistic or cached data is available
+  // If cached, render immediately (0ms). If cold first visit, show skeleton while fetching.
   const [loading, setLoading] = useState<boolean>(() => {
-    return !initialCache && !initialOptimistic;
+    return !initialCache;
   });
   const [notFound, setNotFound] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(() => {
@@ -136,7 +128,7 @@ export function PublicProfilePage() {
       }
 
       // If user pulled to refresh or has no cache, keep current view while fetching
-      if (!isRefresh && (!profileRef.current || profileRef.current.isOptimistic)) {
+      if (!isRefresh && !profileRef.current) {
         setLoading(true);
       }
 
@@ -238,8 +230,8 @@ export function PublicProfilePage() {
         if (!loadedProfile) {
           try {
             const [usersQuerySnap, profilesQuerySnap] = await Promise.all([
-              getDocs(query(collection(db, 'users'), where('username', '==', cleanUsername))),
-              getDocs(query(collection(db, 'profiles'), where('username', '==', cleanUsername))),
+              getDocs(query(collection(db, 'users'), where('username', '==', cleanUsername), limit(1))),
+              getDocs(query(collection(db, 'profiles'), where('username', '==', cleanUsername), limit(1))),
             ]);
 
             if (!profilesQuerySnap.empty) {
@@ -388,6 +380,7 @@ export function PublicProfilePage() {
         setLinks(initialLinks);
         setProfile(loadedProfile);
         setLinksLoading(false);
+        setLoading(false);
         setLastUpdated(new Date());
 
         // Store immediately in ultra-fast memory & persistent cache
@@ -510,7 +503,7 @@ export function PublicProfilePage() {
         }
       } catch (err) {
         console.error('Error fetching public profile:', err);
-        if (!isRefresh && (!profileRef.current || profileRef.current.isOptimistic)) {
+        if (!isRefresh && !profileRef.current) {
           setNotFound(true);
         }
       } finally {
